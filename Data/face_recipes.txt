@@ -1,0 +1,314 @@
+# HSPE face recipes - read by the Face window (Reload recipes re-reads this file, no restart needed).
+#
+# [mood <Name> <angle> [female|male]]   angle in degrees on the mood pad: 0 = right, 90 = top, counter-clockwise
+# [neutral [female|male]]               the default face; takes the weight a partial mood leaves
+# [vowel <Name> [female|male]]          replaces the MOUTH lines of the mood
+# [point <Name>]                        a draggable point on the face diagram (bone / at / twin / x / y lines)
+#   x+|x-|y+|y- pattern <part> <key> <w>        a blend shape driven by one drag direction (weight at a full drag)
+#   x+|x-|y+|y- shape <part> <mesh> <name> <w>  the same with one exact shape; a point needs no bone if it only has these
+#                                       "at" is as seen from the front: her left (_L) sits on the diagram's right
+#
+# <part> pattern <key> <weight>         part = brows / eyes / mouth. The key is applied to every face mesh of that part
+#                                       that has it: eyes = head eyes + lashes + tears, brows = brows mesh,
+#                                       mouth = head mouth + teeth + tongue + beard. Weight 0..100.
+# <part> shape <mesh> <exact name> <w>  one exact blend shape (mesh = head brows lashes teeth tongue tears1 tears2 beard)
+# <part> bone <bone> pos|rot x y z      bone offset from its rest pose (local; rot in degrees). "*_J_X" = cf_J_X or cm_J_X
+# ignore <key>                          never touch this key (face SHAPE keys that share a group with expressions)
+#
+# When a part is used, every other key of that part is written 0 (the game's defaults sit at 100).
+
+ignore e00_face01
+
+# ================================================================ female (HS1 cf_ heads)
+
+[neutral female]
+eyes  pattern e00_def_op 100
+brows pattern e00_def_op 100
+mouth pattern k00_def_cl 100
+
+# Eyes open / Mouth open sliders: a shape with a partner crossfades to it (e01_yorokobi_op -> e01_yorokobi_cl,
+# k07_egao_cl -> k07_egao_op, male X -> X_op); shapes without one fade toward these entries.
+[closed female]
+eyes  pattern e00_def_cl 100
+brows pattern e00_def_cl 100
+
+[open female]
+mouth pattern k00_def_op 100
+
+[mood Joy 0 female]
+eyes  pattern e01_yorokobi_op 100
+brows pattern e01_yorokobi_op 100
+mouth pattern k01_yoyokobi_op 100
+
+[mood Excited 45 female]
+eyes  pattern e07_egao 100
+brows pattern e07_egao 100
+mouth pattern k07_egao_op 100
+
+[mood Surprise 90 female]
+eyes  pattern e11_odoroki_op 100
+brows pattern e11_odoroki_op 100
+mouth pattern k11_odoroki_op 100
+
+[mood Shy 135 female]
+eyes  pattern e10_hazukasii_op 100
+brows pattern e10_hazukasii_op 100
+mouth pattern k09_komari_cl 100
+
+[mood Anger 180 female]
+eyes  pattern e03_ikari_op 100
+brows pattern e03_ikari_op 100
+mouth pattern k03_ikari_cl 100
+
+[mood Sad 225 female]
+eyes  pattern e16_kanasii_op 100
+brows pattern e16_kanasii_op 100
+mouth pattern k16_kanasii_cl 100
+
+[mood Sleepy 270 female]
+eyes  pattern e14_hosome 100
+brows pattern e14_hosome 100
+mouth pattern k00_def_cl 100
+
+[mood Smug 315 female]
+eyes  pattern e17_doyagao 100
+brows pattern e17_doyagao 100
+mouth pattern k17_doyagao_cl 100
+
+# vowels (Japanese a-i-u-e-o):
+# a = open wide and round, tongue low, no teeth    i = wide smile, teeth together and showing
+# u = lips pushed forward, small opening           e = half open, stretched sideways
+# o = rounded and pushed forward, bigger round hole than u
+
+
+[vowel A female]
+mouth pattern k00_def_op 60
+mouth pattern k00_def_cl 40
+
+[vowel I female]
+mouth pattern k07_egao_cl 40
+mouth pattern k07_egao_op 25
+mouth pattern k38_kuisibari_cl 15
+mouth pattern k00_def_cl 20
+
+[vowel U female]
+mouth pattern k41_kuchibue 80
+mouth pattern k00_def_op 20
+
+[vowel E female]
+mouth pattern k07_egao_op 30
+mouth pattern k07_egao_cl 40
+mouth pattern k00_def_cl 20
+mouth pattern k00_def_op 10
+
+[vowel O female]
+mouth pattern k40_ochobo 40
+mouth pattern k00_def_op 40
+mouth pattern k41_kuchibue 20
+# rounder: mouth corners in, lower lip a little down for a taller opening
+mouth bone *_J_Mouth_L pos 0.003 0 0
+mouth bone *_J_Mouth_R pos -0.003 0 0
+mouth bone *_J_MouthLow pos 0 -0.0015 0
+
+# ================================================================ male (HS1 cm_ heads: fewer, differently named shapes)
+
+# Every male entry sets the TEETH explicitly with weights adding up to 100 ("shape teeth" lines override the
+# patterns): left alone, or partly weighted, they end up clenched and pushed forward.
+# Neutral + moods blend by intensity, so any blend adds up to 100 as well.
+
+[neutral male]
+eyes  pattern e00_defo 100
+brows pattern e00_defo 100
+mouth pattern k00_defo 100
+mouth shape teeth bs03_ha.k00_defo 100
+
+[closed male]
+eyes  pattern e00_defo_cl 100
+
+[open male]
+mouth pattern k00_defo_op 100
+mouth shape teeth bs03_ha.k00_defo 30
+mouth shape teeth bs03_ha.k00_open 70
+
+[mood Joy 0 male]
+eyes  pattern e00_smile 100
+brows pattern e00_smile 100
+mouth pattern k00_smile1 100
+mouth shape teeth bs03_ha.k00_defo 70
+mouth shape teeth bs03_ha.k00_openmin 30
+
+[mood Excited 45 male]
+eyes  pattern e00_smile 100
+brows pattern e00_smile 100
+mouth pattern k00_smile2_op 100
+mouth shape teeth bs03_ha.k00_defo 30
+mouth shape teeth bs03_ha.k00_openmin 70
+
+[mood Surprise 90 male]
+eyes  pattern e00_surprise 100
+brows pattern e00_surprise 100
+mouth pattern k00_surprise 100
+mouth shape teeth bs03_ha.k00_defo 30
+mouth shape teeth bs03_ha.k00_open 70
+
+[mood Shy 135 male]
+eyes  pattern e00_smile 50
+eyes  pattern e00_defo 50
+brows pattern e00_sad 60
+brows pattern e00_defo 40
+mouth pattern k00_smile1 60
+mouth pattern k00_defo 40
+mouth shape teeth bs03_ha.k00_defo 100
+
+[mood Anger 180 male]
+eyes  pattern e00_angry 100
+brows pattern e00_angry 100
+mouth pattern k00_angry 100
+mouth shape teeth bs03_ha.k00_defo 70
+mouth shape teeth bs03_ha.k00_openmin 30
+
+[mood Sad 225 male]
+eyes  pattern e00_sad 100
+brows pattern e00_sad 100
+mouth pattern k00_sad 100
+mouth shape teeth bs03_ha.k00_defo 100
+
+[mood Sleepy 270 male]
+eyes  pattern e00_defo_cl 70
+eyes  pattern e00_defo 30
+brows pattern e00_defo 100
+mouth pattern k00_defo 100
+mouth shape teeth bs03_ha.k00_defo 100
+
+[mood Smug 315 male]
+eyes  pattern e00_sukebe 100
+brows pattern e00_smile 60
+brows pattern e00_defo 40
+mouth pattern k00_niyari_R 100
+mouth shape teeth bs03_ha.k00_defo 80
+mouth shape teeth bs03_ha.k00_openmin 20
+
+# male teeth (cm_O_ha) only have k00_defo / k00_open / k00_openmin / k00_name - open them explicitly.
+# Their weights must add up to 100: all-zero = teeth clenched and pushed forward.
+
+[vowel A male]
+mouth pattern k00_defo_op 60
+mouth pattern k00_defo 40
+mouth pattern k00_open 60
+
+# "shape teeth" lines are applied after the patterns, so they set the teeth exactly.
+
+[vowel I male]
+mouth pattern k00_smile1_op 45
+mouth pattern k00_smile2 25
+mouth pattern k00_defo_op 20
+mouth pattern k00_defo 10
+mouth shape teeth bs03_ha.k00_defo 70
+mouth shape teeth bs03_ha.k00_openmin 30
+
+[vowel U male]
+mouth pattern k00_kiss 75
+mouth pattern k00_defo 20
+mouth pattern k00_defo_op 5
+mouth shape teeth bs03_ha.k00_defo 100
+
+[vowel E male]
+mouth pattern k00_smile1_op 50
+mouth pattern k00_smile1 30
+mouth pattern k00_defo_op 20
+mouth shape teeth bs03_ha.k00_defo 20
+mouth shape teeth bs03_ha.k00_openmin 80
+
+[vowel O male]
+mouth pattern k00_kiss 65
+mouth pattern k00_defo_op 25
+mouth pattern k00_surprise 10
+# teeth have no rounded shape: open them (lower teeth drop) instead of showing a closed "angry" bite
+mouth shape teeth bs03_ha.k00_defo 30
+mouth shape teeth bs03_ha.k00_open 70
+# rounder: pull the mouth corners in (cm_J_Mouth_L sits at x -0.02, _R at +0.02)
+mouth bone *_J_Mouth_L pos 0.0025 0 0
+mouth bone *_J_Mouth_R pos -0.0025 0 0
+
+# ================================================================ drag points (both sexes)
+
+[point BrowL]
+bone *_J_Mayu_L
+at 0.66 0.30
+twin BrowR
+x rot 0 0 -10
+y pos 0 0.004 0
+
+[point BrowR]
+bone *_J_Mayu_R
+at 0.34 0.30
+twin BrowL
+x rot 0 0 -10
+y pos 0 0.004 0
+
+[point LidL]
+bone *_J_Eye02_L
+at 0.64 0.40
+twin LidR
+y rot -15 0 0
+
+[point LidR]
+bone *_J_Eye02_R
+at 0.36 0.40
+twin LidL
+y rot -15 0 0
+
+[point CornerL]
+bone *_J_Mouth_L
+at 0.60 0.72
+twin CornerR
+x pos -0.004 0 0
+y pos 0 0.004 0
+
+[point CornerR]
+bone *_J_Mouth_R
+at 0.40 0.72
+twin CornerL
+x pos 0.004 0 0
+y pos 0 0.004 0
+
+[point LipUp]
+bone *_J_Mouthup
+at 0.50 0.69
+y pos 0 0.003 0
+
+[point LipLow]
+bone *_J_MouthLow
+at 0.50 0.76
+y pos 0 0.004 0
+
+[point Jaw]
+bone *_J_ChinLow
+at 0.50 0.88
+y pos 0 0.008 0
+
+[point MouthShift]
+bone *_J_MouthMove
+at 0.50 0.80
+x pos -0.006 0 0
+y pos 0 0.004 0
+
+[point CheekL]
+bone *_J_CheekUp_L
+at 0.72 0.56
+twin CheekR
+y pos 0 0.003 0
+x+ pattern mouth k39_fukure 100
+
+[point CheekR]
+bone *_J_CheekUp_R
+at 0.28 0.56
+twin CheekL
+y pos 0 0.003 0
+x- pattern mouth k39_fukure 100
+
+[point Tongue]
+at 0.50 0.84
+y- pattern mouth k44_sitadasi_a 100
+x+ pattern mouth k55_name_a 100
+x- pattern mouth k56_name_b 100

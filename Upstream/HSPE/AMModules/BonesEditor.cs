@@ -1,0 +1,1325 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Xml;
+using Studio;
+using ToolBox;
+using ToolBox.Extensions;
+using UnityEngine;
+using Vectrosity;
+
+namespace HSPE.AMModules
+{
+	public partial class BonesEditor : AdvancedModeModule
+	{
+#if HONEYSELECT || KOIKATSU || PLAYHOME
+		private const float _cubeSize = 0.012f;
+#else
+		private const float _cubeSize = 0.12f;
+#endif
+
+		private enum CoordType
+		{
+			Position,
+			Rotation,
+			Scale,
+			RotateAround
+		}
+
+		#region Private Variables
+		private static int _positionIncIndex = -1;
+		private static float _positionInc = 0.1f;
+		private static int _rotationIncIndex = 0;
+		private static float _rotationInc = 1f;
+		private static int _scaleIncIndex = -2;
+		private static float _scaleInc = 0.01f;
+		private static int _rotateAroundIncIndex = 0;
+		private static float _rotateAroundInc = 1f;
+		private static string _search = "";
+		internal static readonly Dictionary<string, string> _femaleShortcuts = new Dictionary<string, string>();
+		internal static readonly Dictionary<string, string> _maleShortcuts = new Dictionary<string, string>();
+		internal static readonly Dictionary<string, string> _itemShortcuts = new Dictionary<string, string>();
+		internal static readonly Dictionary<string, string> _boneAliases = new Dictionary<string, string>();
+		private static Vector3? _clipboardPosition;
+		private static Quaternion? _clipboardRotation;
+		private static Vector3? _clipboardScale;
+
+		private readonly GenericOCITarget _target;
+		private Vector2 _boneEditionScroll;
+		private string _currentAlias = "";
+		private Transform _boneTarget;
+		private Transform _twinBoneTarget;
+		private bool _symmetricalEdition = false;
+		private CoordType _boneEditionCoordType = CoordType.Rotation;
+		private Dictionary<GameObject, TransformData> _dirtyBones = new Dictionary<GameObject, TransformData>();
+		private bool _lastShouldSaveValue = false;
+		private Vector3? _oldFKRotationValue;
+		private Vector3? _oldFKTwinRotationValue;
+		private Vector2 _shortcutsScroll;
+		private readonly Dictionary<Transform, string> _boneEditionShortcuts = new Dictionary<Transform, string>();
+		private bool _removeShortcutMode;
+		private readonly HashSet<GameObject> _openedBones = new HashSet<GameObject>();
+		private bool _drawGizmos = true;
+
+		private static readonly List<VectorLine> _cubeDebugLines = new List<VectorLine>();
+		#endregion
+
+		#region Public Accessors
+		public override AdvancedModeModuleType type => AdvancedModeModuleType.BonesEditor;
+		public override string displayName => "Bones";
+		public override bool isEnabled
+		{
+			set
+			{
+				base.isEnabled = value;
+				UpdateDebugLinesState(this);
+			}
+		}
+		#endregion
+
+		#region Constructor
+		public BonesEditor(PoseController parent, GenericOCITarget target) : base(parent)
+		{
+			_target = target;
+			_parent.onLateUpdate += LateUpdate;
+			_parent.onDisable += OnDisable;
+			if (_cubeDebugLines.Count == 0)
+			{
+				Vector3 topLeftForward = (Vector3.up + Vector3.left + Vector3.forward) * _cubeSize,
+					topRightForward = (Vector3.up + Vector3.right + Vector3.forward) * _cubeSize,
+					bottomLeftForward = ((Vector3.down + Vector3.left + Vector3.forward) * _cubeSize),
+					bottomRightForward = ((Vector3.down + Vector3.right + Vector3.forward) * _cubeSize),
+					topLeftBack = (Vector3.up + Vector3.left + Vector3.back) * _cubeSize,
+					topRightBack = (Vector3.up + Vector3.right + Vector3.back) * _cubeSize,
+					bottomLeftBack = (Vector3.down + Vector3.left + Vector3.back) * _cubeSize,
+					bottomRightBack = (Vector3.down + Vector3.right + Vector3.back) * _cubeSize;
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, topLeftForward, topRightForward));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, topRightForward, bottomRightForward));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, bottomRightForward, bottomLeftForward));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, bottomLeftForward, topLeftForward));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, topLeftBack, topRightBack));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, topRightBack, bottomRightBack));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, bottomRightBack, bottomLeftBack));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, bottomLeftBack, topLeftBack));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, topLeftBack, topLeftForward));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, topRightBack, topRightForward));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, bottomRightBack, bottomRightForward));
+				_cubeDebugLines.Add(VectorLine.SetLine(Color.white, bottomLeftBack, bottomLeftForward));
+
+				VectorLine l = VectorLine.SetLine(_redColor, Vector3.zero, Vector3.right * _cubeSize * 2);
+				l.endCap = "vector";
+				_cubeDebugLines.Add(l);
+				l = VectorLine.SetLine(_greenColor, Vector3.zero, Vector3.up * _cubeSize * 2);
+				l.endCap = "vector";
+				_cubeDebugLines.Add(l);
+				l = VectorLine.SetLine(_blueColor, Vector3.zero, Vector3.forward * _cubeSize * 2);
+				l.endCap = "vector";
+				_cubeDebugLines.Add(l);
+
+				foreach (VectorLine line in _cubeDebugLines)
+				{
+					line.lineWidth = 2f;
+					line.active = false;
+				}
+			}
+
+			if (_target.type == GenericOCITarget.Type.Character)
+			{
+#if HONEYSELECT || PLAYHOME
+				if (_target.isFemale)
+				{
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cf_J_Hand_s_L"), "L. Hand");
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cf_J_Hand_s_R"), "R. Hand");
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cf_J_Foot02_L"), "L. Foot");
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cf_J_Foot02_R"), "R. Foot");
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cf_J_FaceRoot"), "Face");
+				}
+				else
+				{
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cm_J_Hand_s_L"), "L. Hand");
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cm_J_Hand_s_R"), "R. Hand");
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cm_J_Foot02_L"), "L. Foot");
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cm_J_Foot02_R"), "R. Foot");
+					_boneEditionShortcuts.Add(_parent.transform.FindDescendant("cm_J_FaceRoot"), "Face");
+				}
+#elif KOIKATSU
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_s_hand_L"), "L. Hand");
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_s_hand_R"), "R. Hand");
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_j_foot_L"), "L. Foot");
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_j_foot_R"), "R. Foot");
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_J_FaceBase"), "Face");
+#elif AISHOUJO || HONEYSELECT2
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_J_Hand_s_L"), "L. Hand");
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_J_Hand_s_R"), "R. Hand");
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_J_Foot02_L"), "L. Foot");
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_J_Foot02_R"), "R. Foot");
+				this._boneEditionShortcuts.Add(this._parent.transform.FindDescendant("cf_J_FaceRoot"), "Face");
+#endif
+			}
+
+			//this._parent.StartCoroutine(this.EndOfFrame());
+		}
+		#endregion
+
+		#region Unity Methods
+		private void LateUpdate()
+		{
+			if (_target.type == GenericOCITarget.Type.Item)
+				ApplyBoneManualCorrection();
+		}
+
+		private void OnDisable()
+		{
+			if (_dirtyBones.Count == 0)
+				return;
+			foreach (KeyValuePair<GameObject, TransformData> kvp in _dirtyBones)
+			{
+				if (kvp.Key == null)
+					continue;
+				if (kvp.Value.scale.hasValue)
+					kvp.Key.transform.localScale = kvp.Value.originalScale;
+				if (kvp.Value.rotation.hasValue)
+					kvp.Key.transform.localRotation = kvp.Value.originalRotation;
+				if (kvp.Value.position.hasValue)
+					kvp.Key.transform.localPosition = kvp.Value.originalPosition;
+			}
+		}
+
+		public override void OnDestroy()
+		{
+			base.OnDestroy();
+			_parent.onLateUpdate -= LateUpdate;
+			_parent.onDisable -= OnDisable;
+		}
+
+		#endregion
+
+		#region Public Methods
+		public override void IKExecutionOrderOnPostLateUpdate()
+		{
+			ApplyBoneManualCorrection();
+		}
+
+		public override void DrawAdvancedModeChanged()
+		{
+			UpdateDebugLinesState(this);
+		}
+
+		public static void SelectionChanged(BonesEditor self)
+		{
+			UpdateDebugLinesState(self);
+		}
+
+		public Transform GetTwinBone(Transform bone)
+		{
+			if (bone.name.EndsWith("_L"))
+				return _parent.transform.FindDescendant(bone.name.Substring(0, bone.name.Length - 2) + "_R");
+			if (bone.name.EndsWith("_R"))
+				return _parent.transform.FindDescendant(bone.name.Substring(0, bone.name.Length - 2) + "_L");
+			if (bone.parent.name.EndsWith("_L"))
+			{
+				Transform twinParent = _parent.transform.FindDescendant(bone.parent.name.Substring(0, bone.parent.name.Length - 2) + "_R");
+				if (twinParent)
+				{
+					int index = bone.GetSiblingIndex();
+					if (index < twinParent.childCount)
+						return twinParent.GetChild(index);
+				}
+			}
+			if (bone.parent.name.EndsWith("_R"))
+			{
+				Transform twinParent = _parent.transform.FindDescendant(bone.parent.name.Substring(0, bone.parent.name.Length - 2) + "_L");
+				if (twinParent)
+				{
+					int index = bone.GetSiblingIndex();
+					if (index < twinParent.childCount)
+						return twinParent.GetChild(index);
+				}
+			}
+			return null;
+		}
+
+		public override void GUILogic()
+		{
+			GUILayout.BeginHorizontal();
+			GUILayout.BeginVertical(GUILayout.ExpandWidth(true));
+			GUILayout.BeginHorizontal();
+			string oldSearch = _search;
+			GUILayout.Label("Search", GUILayout.ExpandWidth(false));
+			_search = GUILayout.TextField(_search);
+			if (GUILayout.Button("X", GUILayout.ExpandWidth(false)))
+				_search = "";
+			if (oldSearch.Length != 0 && _boneTarget && (_search.Length == 0 || (_search.Length < oldSearch.Length && oldSearch.StartsWith(_search))))
+			{
+				bool aliased = true;
+				if (!_boneAliases.TryGetValue(_boneTarget.name, out string displayedName))
+				{
+					displayedName = _boneTarget.name;
+					aliased = false;
+				}
+				if (_boneTarget.name.HasText(oldSearch) || (aliased && displayedName.HasText(oldSearch)))
+					OpenParents(_boneTarget.gameObject);
+			}
+			GUILayout.EndHorizontal();
+			_boneEditionScroll = GUILayout.BeginScrollView(_boneEditionScroll, GUI.skin.box, GUILayout.ExpandHeight(true));
+			foreach (Transform child in _parent.transform)
+			{
+				DisplayObjectTree(child.gameObject, 0);
+			}
+			GUILayout.EndScrollView();
+			GUILayout.BeginHorizontal();
+			GUILayout.Label("Alias", GUILayout.ExpandWidth(false));
+			_currentAlias = GUILayout.TextField(_currentAlias, GUILayout.ExpandWidth(true));
+			if (GUILayout.Button("Save", GUILayout.ExpandWidth(false)))
+			{
+				if (_boneTarget)
+				{
+					_currentAlias = _currentAlias.Trim();
+					if (_currentAlias.Length == 0)
+					{
+						if (_boneAliases.ContainsKey(_boneTarget.name))
+							_boneAliases.Remove(_boneTarget.name);
+					}
+					else
+					{
+						if (_boneAliases.ContainsKey(_boneTarget.name) == false)
+							_boneAliases.Add(_boneTarget.name, _currentAlias);
+						else
+							_boneAliases[_boneTarget.name] = _currentAlias;
+					}
+				}
+				else
+					_currentAlias = "";
+			}
+			GUILayout.EndHorizontal();
+
+			GUILayout.BeginHorizontal();
+			bool newDrawGizmos = GUILayout.Toggle(_drawGizmos, "Draw Gizmos");
+			if (newDrawGizmos != _drawGizmos)
+			{
+				_drawGizmos = newDrawGizmos;
+				UpdateDebugLinesState(this);
+			}
+			GUILayout.FlexibleSpace();
+			if (GUILayout.Button("Unfold modified"))
+			{
+				foreach (KeyValuePair<GameObject, TransformData> pair in _dirtyBones)
+					OpenParents(pair.Key);
+			}
+			GUILayout.EndHorizontal();
+
+			GUILayout.BeginHorizontal();
+			GUILayout.Label("Legend:");
+			Color co = GUI.color;
+			GUI.color = ColorPresets.Selected;
+			GUILayout.Button("Selected");
+			GUI.color = ColorPresets.Changed;
+			GUILayout.Button("Changed*");
+			GUI.color = CollidersEditor._colliderColor;
+			GUILayout.Button("Collider");
+			GUI.color = co;
+			GUILayout.EndHorizontal();
+			GUILayout.EndVertical();
+			GUILayout.BeginVertical(GUI.skin.box, GUILayout.MinWidth(350f * ((MainWindow._self._advancedModeRect.width / 650f - 1f) / 2.7f + 1f)));
+			{
+				OCIChar.BoneInfo fkBoneInfo = null;
+				if (_boneTarget && _target.fkEnabled)
+					_target.fkObjects.TryGetValue(_boneTarget.gameObject, out fkBoneInfo);
+				OCIChar.BoneInfo fkTwinBoneInfo = null;
+				if (_symmetricalEdition && _twinBoneTarget && _target.fkEnabled)
+					_target.fkObjects.TryGetValue(_twinBoneTarget.gameObject, out fkTwinBoneInfo);
+				GUILayout.BeginHorizontal(GUI.skin.box);
+				TransformData transformData = null;
+				if (_boneTarget)
+					_dirtyBones.TryGetValue(_boneTarget.gameObject, out transformData);
+
+				if (transformData != null && transformData.position.hasValue)
+					GUI.color = ColorPresets.Changed;
+				if (_boneEditionCoordType == CoordType.Position)
+					GUI.color = ColorPresets.Selected;
+				if (GUILayout.Button("Position" + (transformData != null && transformData.position.hasValue ? "*" : "")))
+					_boneEditionCoordType = CoordType.Position;
+				GUI.color = co;
+
+				if (transformData != null && transformData.rotation.hasValue)
+					GUI.color = ColorPresets.Changed;
+				if (_boneEditionCoordType == CoordType.Rotation)
+					GUI.color = ColorPresets.Selected;
+				if (GUILayout.Button("Rotation" + (transformData != null && transformData.rotation.hasValue ? "*" : "")))
+					_boneEditionCoordType = CoordType.Rotation;
+				GUI.color = co;
+
+				if (transformData != null && transformData.scale.hasValue)
+					GUI.color = ColorPresets.Changed;
+				if (_boneEditionCoordType == CoordType.Scale)
+					GUI.color = ColorPresets.Selected;
+				if (GUILayout.Button("Scale" + (transformData != null && transformData.scale.hasValue ? "*" : "")))
+					_boneEditionCoordType = CoordType.Scale;
+				GUI.color = co;
+
+				if (_boneEditionCoordType == CoordType.RotateAround)
+					GUI.color = ColorPresets.Selected;
+				if (GUILayout.Button("Rotate Around"))
+					_boneEditionCoordType = CoordType.RotateAround;
+				GUI.color = co;
+
+				GUILayout.EndHorizontal();
+				GUILayout.BeginHorizontal();
+				GUILayout.BeginVertical();
+				switch (_boneEditionCoordType)
+				{
+					case CoordType.Position:
+						Vector3 position = GetBoneTargetPosition();
+						bool shouldSaveValue = false;
+
+						position = Vector3Editor(position, _positionInc, onValueChanged: () => shouldSaveValue = true);
+
+						if (shouldSaveValue)
+							SetBoneTargetPosition(position);
+
+						_lastShouldSaveValue = shouldSaveValue;
+						break;
+					case CoordType.Rotation:
+						Quaternion rotation = GetBoneTargetRotation(fkBoneInfo);
+						shouldSaveValue = false;
+
+						rotation = QuaternionEditor(rotation, _rotationInc, onValueChanged: () => shouldSaveValue = true);
+
+						if (shouldSaveValue)
+						{
+							SetBoneTargetRotation(rotation);
+							SetBoneTargetRotationFKNode(rotation, false, fkBoneInfo, fkTwinBoneInfo);
+						}
+						else if (_lastShouldSaveValue)
+							SetBoneTargetRotationFKNode(rotation, true, fkBoneInfo, fkTwinBoneInfo);
+						_lastShouldSaveValue = shouldSaveValue;
+
+						break;
+					case CoordType.Scale:
+						Vector3 scale = GetBoneTargetScale();
+						shouldSaveValue = false;
+
+						scale = Vector3Editor(scale, _scaleInc, onValueChanged: () => shouldSaveValue = true);
+
+						GUILayout.BeginHorizontal();
+						GUILayout.Label("X/Y/Z");
+						GUILayout.BeginHorizontal(GUILayout.MaxWidth(160f));
+						if (GUILayout.RepeatButton((-_scaleInc).ToString("+0.#####;-0.#####")) && RepeatControl() && _boneTarget)
+						{
+							shouldSaveValue = true;
+							scale -= _scaleInc * Vector3.one;
+						}
+						if (GUILayout.RepeatButton(_scaleInc.ToString("+0.#####;-0.#####")) && RepeatControl() && _boneTarget)
+						{
+							shouldSaveValue = true;
+							scale += _scaleInc * Vector3.one;
+						}
+						GUILayout.EndHorizontal();
+						GUILayout.EndHorizontal();
+
+						if (shouldSaveValue)
+							SetBoneTargetScale(scale);
+
+						_lastShouldSaveValue = shouldSaveValue;
+						break;
+					case CoordType.RotateAround:
+						shouldSaveValue = false;
+						Vector3 axis = Vector3.zero;
+						float angle = 0f;
+						Color c = GUI.color;
+						GUI.color = AdvancedModeModule._redColor;
+						GUILayout.BeginHorizontal();
+						GUILayout.Label("X (Pitch)");
+						GUILayout.BeginHorizontal(GUILayout.MaxWidth(160f));
+						if (GUILayout.RepeatButton((-_rotateAroundInc).ToString("+0.#####;-0.#####")) && _boneTarget)
+						{
+							shouldSaveValue = true;
+							axis = _boneTarget.right;
+							if (RepeatControl())
+								angle = -_rotateAroundInc;
+						}
+						if (GUILayout.RepeatButton(_rotateAroundInc.ToString("+0.#####;-0.#####")) && _boneTarget)
+						{
+							shouldSaveValue = true;
+							axis = _boneTarget.right;
+							if (RepeatControl())
+								angle = _rotateAroundInc;
+						}
+						GUILayout.EndHorizontal();
+						GUILayout.EndHorizontal();
+						GUI.color = c;
+
+						GUI.color = AdvancedModeModule._greenColor;
+						GUILayout.BeginHorizontal();
+						GUILayout.Label("Y (Yaw)");
+						GUILayout.BeginHorizontal(GUILayout.MaxWidth(160f));
+						if (GUILayout.RepeatButton((-_rotateAroundInc).ToString("+0.#####;-0.#####")) && _boneTarget)
+						{
+							shouldSaveValue = true;
+							axis = _boneTarget.up;
+							if (RepeatControl())
+								angle = -_rotateAroundInc;
+						}
+						if (GUILayout.RepeatButton(_rotateAroundInc.ToString("+0.#####;-0.#####")) && _boneTarget)
+						{
+							shouldSaveValue = true;
+							axis = _boneTarget.up;
+							if (RepeatControl())
+								angle = _rotateAroundInc;
+						}
+						GUILayout.EndHorizontal();
+						GUILayout.EndHorizontal();
+						GUI.color = c;
+
+						GUI.color = AdvancedModeModule._blueColor;
+						GUILayout.BeginHorizontal();
+						GUILayout.Label("Z (Roll)");
+						GUILayout.BeginHorizontal(GUILayout.MaxWidth(160f));
+						if (GUILayout.RepeatButton((-_rotateAroundInc).ToString("+0.#####;-0.#####")) && _boneTarget)
+						{
+							shouldSaveValue = true;
+							axis = _boneTarget.forward;
+							if (RepeatControl())
+								angle = -_rotateAroundInc;
+						}
+						if (GUILayout.RepeatButton(_rotateAroundInc.ToString("+0.#####;-0.#####")) && _boneTarget)
+						{
+							shouldSaveValue = true;
+							axis = _boneTarget.forward;
+							if (RepeatControl())
+								angle = _rotateAroundInc;
+						}
+						GUILayout.EndHorizontal();
+						GUILayout.EndHorizontal();
+						GUI.color = c;
+
+						// changed (HSPE fork): one step moved to RotateAroundStep (Kit\Advanced\BonesEditor.Kit.cs), shared with the kit page
+						if (Event.current.rawType == EventType.Repaint)
+						{
+							RotateAroundStep(shouldSaveValue, axis, angle, fkBoneInfo);
+							_lastShouldSaveValue = shouldSaveValue;
+						}
+
+						break;
+				}
+				GUILayout.EndVertical();
+				switch (_boneEditionCoordType)
+				{
+					case CoordType.Position:
+						IncEditor(ref _positionIncIndex, out _positionInc);
+						break;
+					case CoordType.Rotation:
+						IncEditor(ref _rotationIncIndex, out _rotationInc);
+						break;
+					case CoordType.Scale:
+						IncEditor(ref _scaleIncIndex, out _scaleInc);
+						break;
+					case CoordType.RotateAround:
+						IncEditor(ref _rotateAroundIncIndex, out _rotateAroundInc);
+						break;
+				}
+
+				GUILayout.EndHorizontal();
+
+				if (_boneEditionCoordType != CoordType.RotateAround)
+				{
+					GUILayout.BeginHorizontal();
+					_symmetricalEdition = GUILayout.Toggle(_symmetricalEdition, "Symmetrical");
+					GUILayout.FlexibleSpace();
+					switch (_boneEditionCoordType)
+					{
+						case CoordType.Position:
+							if (GUILayout.Button("Copy Position", GUILayout.ExpandWidth(false)) && _boneTarget)
+								_clipboardPosition = GetBoneTargetPosition();
+							bool guiEnabled = GUI.enabled;
+							GUI.enabled = _clipboardPosition != null;
+							if (GUILayout.Button("Paste Position", GUILayout.ExpandWidth(false)) && _clipboardPosition != null && _boneTarget)
+								SetBoneTargetPosition(_clipboardPosition.Value);
+							GUI.enabled = guiEnabled;
+							break;
+						case CoordType.Rotation:
+							if (GUILayout.Button("Copy Rotation", GUILayout.ExpandWidth(false)) && _boneTarget)
+								_clipboardRotation = GetBoneTargetRotation(fkBoneInfo);
+							guiEnabled = GUI.enabled;
+							GUI.enabled = _clipboardRotation != null;
+							if (GUILayout.Button("Paste Rotation", GUILayout.ExpandWidth(false)) && _clipboardRotation != null && _boneTarget)
+							{
+								SetBoneTargetRotation(_clipboardRotation.Value);
+								SetBoneTargetRotationFKNode(_clipboardRotation.Value, true, fkBoneInfo, fkTwinBoneInfo);
+							}
+							GUI.enabled = guiEnabled;
+							break;
+						case CoordType.Scale:
+							if (GUILayout.Button("Copy Scale", GUILayout.ExpandWidth(false)) && _boneTarget)
+								_clipboardScale = GetBoneTargetScale();
+							guiEnabled = GUI.enabled;
+							GUI.enabled = _clipboardScale != null;
+							if (GUILayout.Button("Paste Scale", GUILayout.ExpandWidth(false)) && _clipboardScale != null && _boneTarget)
+								SetBoneTargetScale(_clipboardScale.Value);
+							GUI.enabled = guiEnabled;
+							break;
+					}
+					GUILayout.EndHorizontal();
+				}
+
+				GUILayout.BeginHorizontal();
+				if (GUILayout.Button("Reset Pos.") && _boneTarget)
+					ResetBonePos(_boneTarget, _twinBoneTarget, Event.current.control);
+				if ((fkBoneInfo == null || !fkBoneInfo.active) && GUILayout.Button("Reset Rot.") && _boneTarget)
+					ResetBoneRot(_boneTarget, _twinBoneTarget, Event.current.control);
+				if (GUILayout.Button("Reset Scale") && _boneTarget)
+					ResetBoneScale(_boneTarget, _twinBoneTarget, Event.current.control);
+
+				// changed (HSPE fork): body moved to SetTargetToDefault (Kit\Advanced\BonesEditor.Kit.cs), shared with the kit page
+				if (GUILayout.Button("Default") && _boneTarget)
+					SetTargetToDefault(fkBoneInfo, fkTwinBoneInfo);
+				GUILayout.EndHorizontal();
+
+				GUILayout.BeginHorizontal();
+				if (GUILayout.Button("Dirty Pos.") && _boneTarget)
+					MakeDirtyBonePos(_boneTarget, _twinBoneTarget, Event.current.control);
+				if ((fkBoneInfo == null || fkBoneInfo.active == false) && GUILayout.Button("Dirty Rot.") && _boneTarget)
+					MakeDirtyBoneRot(_boneTarget, _twinBoneTarget, Event.current.control);
+				if (GUILayout.Button("Dirty Scale") && _boneTarget)
+					MakeDirtyBoneScale(_boneTarget, _twinBoneTarget, Event.current.control);
+				GUILayout.EndHorizontal();
+
+				GUILayout.BeginVertical(GUI.skin.box);
+
+				GUILayout.BeginHorizontal();
+
+				Dictionary<string, string> customShortcuts = _target.type == GenericOCITarget.Type.Character ? (_target.isFemale ? _femaleShortcuts : _maleShortcuts) : _itemShortcuts;
+
+				GUIStyle style = GUI.skin.GetStyle("Label");
+				TextAnchor bak = style.alignment;
+				style.alignment = TextAnchor.MiddleCenter;
+				GUILayout.Label("Shortcuts", style);
+				style.alignment = bak;
+
+				if (GUILayout.Button("+ Add Shortcut") && _boneTarget)
+				{
+					string path = _boneTarget.GetPathFrom(_parent.transform);
+					if (path.Length != 0)
+					{
+						if (!customShortcuts.ContainsKey(path))
+							customShortcuts.Add(path, _boneTarget.name);
+					}
+					_removeShortcutMode = false;
+				}
+
+				Color color = GUI.color;
+				if (_removeShortcutMode)
+					GUI.color = AdvancedModeModule._redColor;
+				if (GUILayout.Button(_removeShortcutMode ? "Click on a shortcut" : "- Remove Shortcut"))
+					_removeShortcutMode = !_removeShortcutMode;
+				GUI.color = color;
+
+				GUILayout.EndHorizontal();
+
+				_shortcutsScroll = GUILayout.BeginScrollView(_shortcutsScroll);
+
+				GUILayout.BeginHorizontal();
+				GUILayout.BeginVertical();
+
+				int i = 0;
+				int half = (_boneEditionShortcuts.Count + customShortcuts.Count(e => _parent.transform.Find(e.Key) != null)) / 2;
+				foreach (KeyValuePair<Transform, string> kvp in _boneEditionShortcuts)
+				{
+					if (i == half)
+					{
+						GUILayout.EndVertical();
+						GUILayout.BeginVertical();
+					}
+
+					if (GUILayout.Button(kvp.Value))
+						GoToObject(kvp.Key.gameObject);
+					++i;
+				}
+				string toRemove = null;
+				foreach (KeyValuePair<string, string> kvp in customShortcuts)
+				{
+					Transform shortcut = _parent.transform.Find(kvp.Key);
+					if (shortcut == null)
+						continue;
+
+					if (i == half)
+					{
+						GUILayout.EndVertical();
+						GUILayout.BeginVertical();
+					}
+
+					string sName = kvp.Value;
+					if (_boneAliases.TryGetValue(sName, out string newName))
+						sName = newName;
+					if (GUILayout.Button(sName))
+					{
+						if (_removeShortcutMode)
+						{
+							toRemove = kvp.Key;
+							_removeShortcutMode = false;
+						}
+						else
+							GoToObject(shortcut.gameObject);
+					}
+					++i;
+
+				}
+				if (toRemove != null)
+					customShortcuts.Remove(toRemove);
+
+				GUILayout.EndVertical();
+				GUILayout.EndHorizontal();
+
+				GUILayout.EndScrollView();
+
+				GUILayout.EndVertical();
+			}
+			GUILayout.EndVertical();
+			GUILayout.EndHorizontal();
+		}
+
+		private void ChangeBoneTarget(Transform newTarget)
+		{
+			_boneTarget = newTarget;
+			_currentAlias = _boneAliases.ContainsKey(_boneTarget.name) ? _boneAliases[_boneTarget.name] : "";
+			_twinBoneTarget = GetTwinBone(newTarget);
+			if (_boneTarget == _twinBoneTarget)
+				_twinBoneTarget = null;
+			UpdateDebugLinesState(this);
+		}
+
+		private Vector3 GetBoneTargetPosition()
+		{
+			return _boneTarget ? GetBonePosition(_boneTarget) : Vector3.zero;
+		}
+
+		private Vector3 GetBonePosition(Transform bone)
+		{
+			return _dirtyBones.TryGetValue(bone.gameObject, out TransformData data) && data.position.hasValue
+				? (Vector3)data.position
+				: bone.localPosition;
+		}
+
+		private void SetBoneTargetPosition(Vector3 position)
+		{
+			if (_boneTarget)
+			{
+				SetBonePosition(_boneTarget, position);
+
+				if (_symmetricalEdition && _twinBoneTarget)
+				{
+					position.x *= -1f;
+					SetBonePosition(_twinBoneTarget, position);
+				}
+			}
+		}
+
+		private void SetBonePosition(Transform bone, Vector3 position)
+		{
+			SetBoneDirty(bone.gameObject).SetPosition(position, bone);
+			/*TransformData td = SetBoneDirty(bone.gameObject);
+			td.position = position;
+			if (!td.originalPosition.hasValue)
+				td.originalPosition = bone.localPosition;*/
+		}
+
+		private Quaternion GetBoneTargetRotation(OCIChar.BoneInfo fkBoneInfo)
+		{
+			if (!_boneTarget)
+				return Quaternion.identity;
+
+			return fkBoneInfo != null && fkBoneInfo.active
+				? fkBoneInfo.guideObject.transformTarget.localRotation
+				: GetBoneRotation(_boneTarget);
+		}
+
+		private Quaternion GetBoneRotation(Transform bone)
+		{
+			return _dirtyBones.TryGetValue(bone.gameObject, out TransformData data) && data.rotation.hasValue
+				? (Quaternion)data.rotation
+				: bone.localRotation;
+		}
+
+		private void SetBoneTargetRotation(Quaternion rotation)
+		{
+			if (_boneTarget)
+			{
+				SetBoneRotation(_boneTarget, rotation);
+
+				if (_symmetricalEdition && _twinBoneTarget)
+					SetBoneRotation(_twinBoneTarget, new Quaternion(-rotation.x, rotation.y, rotation.z, -rotation.w));
+			}
+		}
+
+		private void SetBoneRotation(Transform bone, Quaternion rotation)
+		{
+			SetBoneDirty(bone.gameObject).SetRotation(rotation, bone);
+			/*TransformData td = SetBoneDirty(bone.gameObject);
+			td.rotation = rotation;
+			if (!td.originalRotation.hasValue)
+				td.originalRotation = bone.localRotation;*/
+		}
+
+		private void SetBoneTargetRotationFKNode(Quaternion rotation, bool pushValue, OCIChar.BoneInfo fkBoneInfo, OCIChar.BoneInfo fkTwinBoneInfo)
+		{
+			if (_boneTarget && fkBoneInfo != null)
+			{
+				if (_oldFKRotationValue == null)
+					_oldFKRotationValue = fkBoneInfo.guideObject.changeAmount.rot;
+				fkBoneInfo.guideObject.changeAmount.rot = rotation.eulerAngles;
+
+				if (_symmetricalEdition && fkTwinBoneInfo != null && fkTwinBoneInfo.active)
+				{
+					if (_oldFKTwinRotationValue == null)
+						_oldFKTwinRotationValue = fkTwinBoneInfo.guideObject.changeAmount.rot;
+					fkTwinBoneInfo.guideObject.changeAmount.rot = new Quaternion(-rotation.x, rotation.y, rotation.z, -rotation.w).eulerAngles;
+				}
+
+				if (pushValue)
+				{
+					GuideCommand.EqualsInfo[] infos = _symmetricalEdition && fkTwinBoneInfo != null && fkTwinBoneInfo.active
+						? (new GuideCommand.EqualsInfo[2])
+						: (new GuideCommand.EqualsInfo[1]);
+					infos[0] = new GuideCommand.EqualsInfo()
+					{
+						dicKey = fkBoneInfo.guideObject.dicKey,
+						oldValue = _oldFKRotationValue.Value,
+						newValue = fkBoneInfo.guideObject.changeAmount.rot
+					};
+					if (_symmetricalEdition && fkTwinBoneInfo != null && fkTwinBoneInfo.active)
+						infos[1] = new GuideCommand.EqualsInfo()
+						{
+							dicKey = fkTwinBoneInfo.guideObject.dicKey,
+							oldValue = _oldFKTwinRotationValue.Value,
+							newValue = fkTwinBoneInfo.guideObject.changeAmount.rot
+						};
+					UndoRedoManager.Instance.Push(new GuideCommand.RotationEqualsCommand(infos));
+					_oldFKRotationValue = null;
+					_oldFKTwinRotationValue = null;
+				}
+			}
+		}
+
+		private Vector3 GetBoneTargetScale()
+		{
+			return _boneTarget ? GetBoneScale(_boneTarget) : Vector3.one;
+		}
+
+		private Vector3 GetBoneScale(Transform bone)
+		{
+			return _dirtyBones.TryGetValue(_boneTarget.gameObject, out TransformData data) && data.scale.hasValue
+				? (Vector3)data.scale
+				: _boneTarget.localScale;
+		}
+
+		private void SetBoneTargetScale(Vector3 scale)
+		{
+			if (_boneTarget)
+			{
+				SetBoneScale(_boneTarget, scale);
+
+				if (_symmetricalEdition && _twinBoneTarget != null)
+					SetBoneScale(_twinBoneTarget, scale);
+			}
+		}
+
+		private void SetBoneScale(Transform bone, Vector3 scale)
+		{
+			SetBoneDirty(bone.gameObject).SetScale(scale, bone);
+			/*TransformData td = SetBoneDirty(bone.gameObject);
+			td.scale = scale;
+			if (!td.originalScale.hasValue)
+				td.originalScale = bone.localScale;*/
+		}
+
+		public void GoToObject(GameObject go)
+		{
+			if (ReferenceEquals(go, _parent.transform.gameObject))
+				return;
+			GameObject goBak = go;
+			ChangeBoneTarget(go.transform);
+			OpenParents(go);
+			Vector2 scroll = new Vector2(0f, -GUI.skin.button.CalcHeight(new GUIContent("a"), 100f) - 4);
+			GetScrollPosition(_parent.transform.gameObject, goBak, 0, ref scroll);
+			scroll.y -= GUI.skin.button.CalcHeight(new GUIContent("a"), 100f) + 4;
+			_boneEditionScroll = scroll;
+		}
+
+		public void LoadFrom(BonesEditor other)
+		{
+			MainWindow._self.ExecuteDelayed(() =>
+			{
+				foreach (GameObject openedBone in other._openedBones)
+				{
+					Transform obj = _parent.transform.Find(openedBone.transform.GetPathFrom(other._parent.transform));
+					if (obj)
+						_openedBones.Add(obj.gameObject);
+				}
+				foreach (KeyValuePair<GameObject, TransformData> kvp in other._dirtyBones)
+				{
+					Transform obj = _parent.transform.Find(kvp.Key.transform.GetPathFrom(other._parent.transform));
+					if (obj)
+						_dirtyBones.Add(obj.gameObject, new TransformData(kvp.Value));
+				}
+				_boneEditionScroll = other._boneEditionScroll;
+				_shortcutsScroll = other._shortcutsScroll;
+				_drawGizmos = other._drawGizmos;
+			}, 2);
+		}
+
+		public override int SaveXml(XmlTextWriter xmlWriter)
+		{
+			int written = 0;
+			if (_dirtyBones.Count != 0)
+			{
+				xmlWriter.WriteStartElement("advancedObjects");
+				foreach (KeyValuePair<GameObject, TransformData> kvp in _dirtyBones)
+				{
+					if (kvp.Key == null)
+						continue;
+					string n = kvp.Key.transform.GetPathFrom(_parent.transform);
+					xmlWriter.WriteStartElement("object");
+					xmlWriter.WriteAttributeString("name", n);
+
+					if (kvp.Value.position.hasValue)
+					{
+						xmlWriter.WriteAttributeString("posX", XmlConvert.ToString(kvp.Value.position.value.x));
+						xmlWriter.WriteAttributeString("posY", XmlConvert.ToString(kvp.Value.position.value.y));
+						xmlWriter.WriteAttributeString("posZ", XmlConvert.ToString(kvp.Value.position.value.z));
+					}
+					if (kvp.Value.rotation.hasValue && (!_target.fkEnabled || !_target.fkObjects.TryGetValue(kvp.Key, out OCIChar.BoneInfo info) || info.active == false))
+					{
+						xmlWriter.WriteAttributeString("rotW", XmlConvert.ToString(kvp.Value.rotation.value.w));
+						xmlWriter.WriteAttributeString("rotX", XmlConvert.ToString(kvp.Value.rotation.value.x));
+						xmlWriter.WriteAttributeString("rotY", XmlConvert.ToString(kvp.Value.rotation.value.y));
+						xmlWriter.WriteAttributeString("rotZ", XmlConvert.ToString(kvp.Value.rotation.value.z));
+					}
+
+					if (kvp.Value.scale.hasValue)
+					{
+						xmlWriter.WriteAttributeString("scaleX", XmlConvert.ToString(kvp.Value.scale.value.x));
+						xmlWriter.WriteAttributeString("scaleY", XmlConvert.ToString(kvp.Value.scale.value.y));
+						xmlWriter.WriteAttributeString("scaleZ", XmlConvert.ToString(kvp.Value.scale.value.z));
+					}
+					xmlWriter.WriteEndElement();
+					++written;
+				}
+				xmlWriter.WriteEndElement();
+			}
+			return written;
+		}
+
+		public override bool LoadXml(XmlNode xmlNode)
+		{
+			bool changed = false;
+			ResetAll();
+			XmlNode objects = xmlNode.FindChildNode("advancedObjects");
+
+			if (objects != null)
+			{
+				foreach (XmlNode node in objects.ChildNodes)
+				{
+					try
+					{
+						if (node.Name != "object")
+							continue;
+						string name = node.Attributes["name"].Value;
+						Transform obj = _parent.transform.Find(name);
+						if (obj == null)
+							continue;
+						TransformData data = new TransformData();
+						if (node.Attributes["posX"] != null && node.Attributes["posY"] != null && node.Attributes["posZ"] != null)
+						{
+							Vector3 pos;
+							pos.x = XmlConvert.ToSingle(node.Attributes["posX"].Value);
+							pos.y = XmlConvert.ToSingle(node.Attributes["posY"].Value);
+							pos.z = XmlConvert.ToSingle(node.Attributes["posZ"].Value);
+							data.position = pos;
+							data.originalPosition = obj.localPosition;
+						}
+						if (node.Attributes["rotW"] != null && node.Attributes["rotX"] != null && node.Attributes["rotY"] != null && node.Attributes["rotZ"] != null)
+						{
+							Quaternion rot;
+							rot.w = XmlConvert.ToSingle(node.Attributes["rotW"].Value);
+							rot.x = XmlConvert.ToSingle(node.Attributes["rotX"].Value);
+							rot.y = XmlConvert.ToSingle(node.Attributes["rotY"].Value);
+							rot.z = XmlConvert.ToSingle(node.Attributes["rotZ"].Value);
+							data.rotation = rot;
+							data.originalRotation = obj.localRotation;
+						}
+						if (node.Attributes["scaleX"] != null && node.Attributes["scaleY"] != null && node.Attributes["scaleZ"] != null)
+						{
+							Vector3 scale;
+							scale.x = XmlConvert.ToSingle(node.Attributes["scaleX"].Value);
+							scale.y = XmlConvert.ToSingle(node.Attributes["scaleY"].Value);
+							scale.z = XmlConvert.ToSingle(node.Attributes["scaleZ"].Value);
+							data.scale = scale;
+							data.originalScale = obj.localScale;
+						}
+
+						if (data.position.hasValue || data.rotation.hasValue || data.scale.hasValue)
+						{
+							changed = true;
+							_dirtyBones.Add(obj.gameObject, data);
+						}
+					}
+					catch (Exception e)
+					{
+						UnityEngine.Debug.LogError($"HSPE: Couldn't load bones for object {_parent.name} {node.OuterXml}\n{e}");
+					}
+				}
+			}
+
+			return changed;
+		}
+		#endregion
+
+		#region Private Methods
+		private void ResetAll()
+		{
+			while (_dirtyBones.Count != 0)
+			{
+				KeyValuePair<GameObject, TransformData> pair = _dirtyBones.First();
+				ResetBonePos(pair.Key.transform);
+				ResetBoneRot(pair.Key.transform);
+				ResetBoneScale(pair.Key.transform);
+				// addition (HSPE fork): ResetBoneRot leaves bones that FK currently drives alone, so an FK bone holding a
+				// rotation never left _dirtyBones and this loop never ended. Everything is being reset here: drop it too.
+				if (_dirtyBones.TryGetValue(pair.Key, out TransformData data))
+				{
+					data.rotation.Reset();
+					SetBoneNotDirtyIf(pair.Key);
+				}
+			}
+		}
+
+		private void ResetBonePos(Transform bone, Transform twinBone = null, bool withChildren = false, int depth = 0) // Depth is a safeguard because for some reason I saw people getting stackoverflows on this function
+		{
+			if (depth == 64)
+				return;
+			if (_dirtyBones.TryGetValue(bone.gameObject, out TransformData data))
+			{
+				data.position.Reset();
+				SetBoneNotDirtyIf(bone.gameObject);
+			}
+			if (_symmetricalEdition && twinBone && _dirtyBones.TryGetValue(twinBone.gameObject, out data))
+			{
+				data.position.Reset();
+				SetBoneNotDirtyIf(twinBone.gameObject);
+			}
+			if (withChildren && _dirtyBones.Count != 0)
+			{
+				foreach (Transform childBone in bone)
+				{
+					Transform twinChildBone = GetTwinBone(childBone);
+					if (twinChildBone == childBone)
+						twinChildBone = null;
+					ResetBonePos(childBone, twinChildBone, true, depth + 1);
+				}
+			}
+		}
+
+		private void ResetBoneRot(Transform bone, Transform twinBone = null, bool withChildren = false, int depth = 0)
+		{
+			if (depth == 64)
+				return;
+			if ((!_target.fkEnabled || !_target.fkObjects.TryGetValue(bone.gameObject, out OCIChar.BoneInfo info) || !info.active) && _dirtyBones.TryGetValue(bone.gameObject, out TransformData data))
+			{
+				data.rotation.Reset();
+				SetBoneNotDirtyIf(bone.gameObject);
+			}
+			if (_symmetricalEdition && twinBone && (!_target.fkEnabled || !_target.fkObjects.TryGetValue(twinBone.gameObject, out info) || !info.active) && _dirtyBones.TryGetValue(twinBone.gameObject, out data))
+			{
+				data.rotation.Reset();
+				SetBoneNotDirtyIf(twinBone.gameObject);
+			}
+			if (withChildren && _dirtyBones.Count != 0)
+			{
+				foreach (Transform childBone in bone)
+				{
+					Transform twinChildBone = GetTwinBone(childBone);
+					if (twinChildBone == childBone)
+						twinChildBone = null;
+					ResetBoneRot(childBone, twinChildBone, true, depth + 1);
+				}
+			}
+		}
+
+		private void ResetBoneScale(Transform bone, Transform twinBone = null, bool withChildren = false, int depth = 0)
+		{
+			if (depth == 64)
+				return;
+			if (_dirtyBones.TryGetValue(bone.gameObject, out TransformData data))
+			{
+				data.scale.Reset();
+				SetBoneNotDirtyIf(bone.gameObject);
+			}
+			if (_symmetricalEdition && twinBone && _dirtyBones.TryGetValue(twinBone.gameObject, out data))
+			{
+				data.scale.Reset();
+				SetBoneNotDirtyIf(twinBone.gameObject);
+			}
+			if (withChildren && _dirtyBones.Count != 0)
+			{
+				foreach (Transform childBone in bone)
+				{
+					Transform twinChildBone = GetTwinBone(childBone);
+					if (twinChildBone == childBone)
+						twinChildBone = null;
+					ResetBoneScale(childBone, twinChildBone, true, depth + 1);
+				}
+			}
+		}
+
+		private void MakeDirtyBonePos(Transform bone, Transform twinBone, bool withChildren = false)
+		{
+			SetBonePosition(bone, GetBonePosition(bone));
+			if (_symmetricalEdition && twinBone)
+				SetBonePosition(twinBone, GetBonePosition(twinBone));
+			if (withChildren)
+			{
+				for (int i = 0; i < bone.childCount; ++i)
+				{
+					Transform child = bone.GetChild(i);
+					Transform twinChild = GetTwinBone(child);
+					if (twinChild == child)
+						twinChild = null;
+					MakeDirtyBonePos(child, twinChild, true);
+				}
+			}
+		}
+
+		private void MakeDirtyBoneRot(Transform bone, Transform twinBone, bool withChildren = false)
+		{
+			SetBoneRotation(bone, GetBoneRotation(bone));
+			if (_symmetricalEdition && twinBone)
+				SetBoneRotation(twinBone, GetBoneRotation(twinBone));
+			if (withChildren)
+			{
+				for (int i = 0; i < bone.childCount; ++i)
+				{
+					Transform child = bone.GetChild(i);
+					Transform twinChild = GetTwinBone(child);
+					if (twinChild == child)
+						twinChild = null;
+					MakeDirtyBoneRot(child, twinChild, true);
+				}
+			}
+		}
+
+		private void MakeDirtyBoneScale(Transform bone, Transform twinBone, bool withChildren = false)
+		{
+			SetBoneScale(bone, GetBoneScale(bone));
+			if (_symmetricalEdition && twinBone)
+				SetBoneScale(twinBone, GetBoneScale(twinBone));
+			if (withChildren)
+			{
+				for (int i = 0; i < bone.childCount; ++i)
+				{
+					Transform child = bone.GetChild(i);
+					Transform twinChild = GetTwinBone(child);
+					if (twinChild == child)
+						twinChild = null;
+					MakeDirtyBoneScale(child, twinChild, true);
+				}
+			}
+		}
+
+		private void DisplayObjectTree(GameObject go, int indent)
+		{
+			if (_parent._childObjects.Contains(go))
+				return;
+			bool aliased = true;
+			if (_boneAliases.TryGetValue(go.name, out string displayedName) == false)
+			{
+				displayedName = go.name;
+				aliased = false;
+			}
+
+			if (_search.Length == 0 || go.name.IndexOf(_search, StringComparison.OrdinalIgnoreCase) != -1 || (aliased && displayedName.IndexOf(_search, StringComparison.OrdinalIgnoreCase) != -1))
+			{
+				Color c = GUI.color;
+				if (_dirtyBones.ContainsKey(go))
+					GUI.color = ColorPresets.Changed;
+				if (_parent._collidersEditor._colliders.ContainsKey(go.transform))
+					GUI.color = CollidersEditor._colliderColor;
+				if (_boneTarget == go.transform)
+					GUI.color = ColorPresets.Selected;
+				GUILayout.BeginHorizontal();
+				if (_search.Length == 0)
+				{
+					GUILayout.Space(indent * 20f);
+					int childCount = 0;
+					for (int i = 0; i < go.transform.childCount; ++i)
+						if (_parent._childObjects.Contains(go.transform.GetChild(i).gameObject) == false)
+							++childCount;
+					if (childCount != 0)
+					{
+						if (GUILayout.Toggle(_openedBones.Contains(go), "", GUILayout.ExpandWidth(false)))
+						{
+							if (_openedBones.Contains(go) == false)
+								_openedBones.Add(go);
+						}
+						else
+						{
+							if (_openedBones.Contains(go))
+								_openedBones.Remove(go);
+						}
+					}
+					else
+						GUILayout.Space(20f);
+				}
+				if (GUILayout.Button(displayedName + (_dirtyBones.ContainsKey(go) ? "*" : ""), GUILayout.ExpandWidth(false)))
+				{
+					ChangeBoneTarget(go.transform);
+				}
+				GUI.color = c;
+				GUILayout.EndHorizontal();
+			}
+			if (_search.Length != 0 || _openedBones.Contains(go))
+				for (int i = 0; i < go.transform.childCount; ++i)
+					DisplayObjectTree(go.transform.GetChild(i).gameObject, indent + 1);
+		}
+
+		private TransformData SetBoneDirty(GameObject go)
+		{
+			if (!_dirtyBones.TryGetValue(go, out TransformData data))
+			{
+				data = new TransformData();
+				_dirtyBones.Add(go, data);
+			}
+			return data;
+		}
+
+		private void SetBoneNotDirtyIf(GameObject go)
+		{
+			if (_dirtyBones.ContainsKey(go))
+			{
+				TransformData data = _dirtyBones[go];
+				if (!data.position.hasValue && data.originalPosition.hasValue)
+				{
+					go.transform.localPosition = data.originalPosition;
+					data.originalPosition.Reset();
+				}
+				if (!data.rotation.hasValue && data.originalRotation.hasValue)
+				{
+					go.transform.localRotation = data.originalRotation;
+					data.originalRotation.Reset();
+				}
+				if (!data.scale.hasValue && data.originalScale.hasValue)
+				{
+					go.transform.localScale = data.originalScale;
+					data.originalScale.Reset();
+				}
+				if (!data.position.hasValue && !data.rotation.hasValue && !data.scale.hasValue)
+				{
+					_dirtyBones.Remove(go);
+				}
+			}
+		}
+
+		private void OpenParents(GameObject child)
+		{
+			if (ReferenceEquals(child, _parent.transform.gameObject))
+				return;
+			child = child.transform.parent.gameObject;
+			while (child.transform != _parent.transform)
+			{
+				_openedBones.Add(child);
+				child = child.transform.parent.gameObject;
+			}
+			_openedBones.Add(child);
+		}
+
+		private bool GetScrollPosition(GameObject root, GameObject go, int indent, ref Vector2 scrollPosition)
+		{
+			if (_parent._childObjects.Contains(go))
+				return false;
+			scrollPosition = new Vector2(indent * 20f, scrollPosition.y + GUI.skin.button.CalcHeight(new GUIContent("a"), 100f) + 4);
+			if (ReferenceEquals(root, go))
+				return true;
+			if (_openedBones.Contains(root))
+				for (int i = 0; i < root.transform.childCount; ++i)
+					if (GetScrollPosition(root.transform.GetChild(i).gameObject, go, indent + 1, ref scrollPosition))
+						return true;
+			return false;
+		}
+
+		private void ApplyBoneManualCorrection()
+		{
+			if (_dirtyBones.Count == 0)
+				return;
+			bool shouldClean = false;
+			foreach (var kvp in _dirtyBones)
+			{
+				if (kvp.Key == null)
+				{
+					shouldClean = true;
+					continue;
+				}
+				if (kvp.Value.scale.hasValue)
+					kvp.Key.transform.localScale = kvp.Value.scale;
+				if (kvp.Value.rotation.hasValue)
+					kvp.Key.transform.localRotation = kvp.Value.rotation;
+				if (kvp.Value.position.hasValue)
+					kvp.Key.transform.localPosition = kvp.Value.position;
+			}
+			if (shouldClean)
+			{
+				var newDirtyBones = new Dictionary<GameObject, TransformData>();
+				foreach (var kvp in _dirtyBones)
+					if (kvp.Key != null)
+						newDirtyBones.Add(kvp.Key, kvp.Value);
+				_dirtyBones = newDirtyBones;
+			}
+		}
+
+		public override void UpdateGizmos()
+		{
+			if (GizmosEnabled() == false)
+				return;
+
+			Vector3 topLeftForward = _boneTarget.transform.position + (_boneTarget.up + -_boneTarget.right + _boneTarget.forward) * _cubeSize,
+				topRightForward = _boneTarget.transform.position + (_boneTarget.up + _boneTarget.right + _boneTarget.forward) * _cubeSize,
+				bottomLeftForward = _boneTarget.transform.position + ((-_boneTarget.up + -_boneTarget.right + _boneTarget.forward) * _cubeSize),
+				bottomRightForward = _boneTarget.transform.position + ((-_boneTarget.up + _boneTarget.right + _boneTarget.forward) * _cubeSize),
+				topLeftBack = _boneTarget.transform.position + (_boneTarget.up + -_boneTarget.right + -_boneTarget.forward) * _cubeSize,
+				topRightBack = _boneTarget.transform.position + (_boneTarget.up + _boneTarget.right + -_boneTarget.forward) * _cubeSize,
+				bottomLeftBack = _boneTarget.transform.position + (-_boneTarget.up + -_boneTarget.right + -_boneTarget.forward) * _cubeSize,
+				bottomRightBack = _boneTarget.transform.position + (-_boneTarget.up + _boneTarget.right + -_boneTarget.forward) * _cubeSize;
+			int i = 0;
+			_cubeDebugLines[i++].SetPoints(topLeftForward, topRightForward);
+			_cubeDebugLines[i++].SetPoints(topRightForward, bottomRightForward);
+			_cubeDebugLines[i++].SetPoints(bottomRightForward, bottomLeftForward);
+			_cubeDebugLines[i++].SetPoints(bottomLeftForward, topLeftForward);
+			_cubeDebugLines[i++].SetPoints(topLeftBack, topRightBack);
+			_cubeDebugLines[i++].SetPoints(topRightBack, bottomRightBack);
+			_cubeDebugLines[i++].SetPoints(bottomRightBack, bottomLeftBack);
+			_cubeDebugLines[i++].SetPoints(bottomLeftBack, topLeftBack);
+			_cubeDebugLines[i++].SetPoints(topLeftBack, topLeftForward);
+			_cubeDebugLines[i++].SetPoints(topRightBack, topRightForward);
+			_cubeDebugLines[i++].SetPoints(bottomRightBack, bottomRightForward);
+			_cubeDebugLines[i++].SetPoints(bottomLeftBack, bottomLeftForward);
+
+			_cubeDebugLines[i++].SetPoints(_boneTarget.transform.position, _boneTarget.transform.position + _boneTarget.right * _cubeSize * 2);
+			_cubeDebugLines[i++].SetPoints(_boneTarget.transform.position, _boneTarget.transform.position + _boneTarget.up * _cubeSize * 2);
+			_cubeDebugLines[i++].SetPoints(_boneTarget.transform.position, _boneTarget.transform.position + _boneTarget.forward * _cubeSize * 2);
+
+			foreach (VectorLine line in _cubeDebugLines)
+				line.Draw();
+		}
+
+		private static void UpdateDebugLinesState(BonesEditor self)
+		{
+			bool e = self != null && self.GizmosEnabled();
+			foreach (VectorLine line in _cubeDebugLines)
+				line.active = e;
+		}
+
+		private bool GizmosEnabled()
+		{
+			return _isEnabled && PoseController._drawAdvancedMode && _drawGizmos && _boneTarget;
+		}
+		#endregion
+	}
+}

@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <SharedGUID>cdb0689d-19ff-4778-9fee-a366bbf9cec6</SharedGUID>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <Import_RootNamespace>ToolBox_Shared</Import_RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)ColorPresets.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)EditablePair.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Extensions\GenericExtensions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ExternalPlugin.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)GenericConfig.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)GenericPlugin.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Extensions\HarmonyExtensions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Extensions\IMGUIExtensions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Logger.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Extensions\MonoBehaviourExtensions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Extensions\ReflectionExtensions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Shortcut.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TimelineCompatibility.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Extensions\TransformExtensions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TranslationDictionary.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Extensions\VariousExtensions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)WeakKeyDictionary.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Extensions\XmlExtensions.cs" />
+  </ItemGroup>
+</Project>

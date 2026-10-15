@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <OutputType>Library</OutputType>
+    <RootNamespace>HSPE</RootNamespace>
+    <!-- Must stay "HSPENeo": drop-in replacement (VNGE, HSSceneStates, Timeline find it by name). -->
+    <AssemblyName>HSPENeo</AssemblyName>
+    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <LangVersion>7.3</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>HONEYSELECT;IPA</DefineConstants>
+    <HSDir Condition=" '$(HSDir)' == '' ">..\HoneySelect</HSDir>
+    <ManagedDir>$(HSDir)\StudioNEO_64_Data\Managed</ManagedDir>
+    <PluginsDir>$(HSDir)\Plugins</PluginsDir>
+    <DeployDir Condition=" '$(DeployDir)' == '' ">$(PluginsDir)</DeployDir>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+    <Reference Include="UnityEngine"><HintPath>$(ManagedDir)\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(ManagedDir)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp-firstpass"><HintPath>$(ManagedDir)\Assembly-CSharp-firstpass.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Vectrosity"><HintPath>$(ManagedDir)\Vectrosity.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="IllusionPlugin"><HintPath>$(ManagedDir)\IllusionPlugin.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="IllusionInjector"><HintPath>$(ManagedDir)\IllusionInjector.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(PluginsDir)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="HSExtSave"><HintPath>$(PluginsDir)\HSExtSave.dll</HintPath><Private>false</Private></Reference>
+    <!-- The new windows are built with HSUIKit (its repository is cloned next to this folder); HSUIKit.dll must be installed. -->
+    <Reference Include="HSUIKit"><HintPath>..\HSUIKit\bin\Release\HSUIKit.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Upstream\HSPE\**\*.cs" Exclude="Upstream\HSPE\obj\**;Upstream\HSPE\bin\**" />
+    <Compile Include="Kit\**\*.cs" />
+    <Compile Include="Shared\KitGuard.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exact manifest names of the installed DLL (UIUtility.Init finds DefaultResources by EndsWith). -->
+    <EmbeddedResource Include="Upstream\HSPE\Resources\hsperesources.unity3d">
+      <LogicalName>HSPE.Resources.HSPEResources.unity3d</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <Import Project="Upstream\ToolBox_Shared\ToolBox_Shared.projitems" Label="Shared" />
+  <Import Project="Upstream\UIUtility_Shared\UIUtility_Shared.projitems" Label="Shared" />
+
+  <!-- UIUtility_Shared embeds DefaultResources with a namespace-derived name; force the installed one. -->
+  <ItemGroup>
+    <EmbeddedResource Remove="$(MSBuildProjectDirectory)\Upstream\UIUtility_Shared\Resources\DefaultResources.unity3d" />
+    <EmbeddedResource Include="Upstream\UIUtility_Shared\Resources\DefaultResources.unity3d">
+      <LogicalName>HSPE.Resources.DefaultResources.unity3d</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <Target Name="CopyToPlugins" AfterTargets="Build">
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(DeployDir)" ContinueOnError="true" />
+    <Copy SourceFiles="Data\face_recipes.txt" DestinationFolder="$(DeployDir)\HSPE" ContinueOnError="true" />
+    <ItemGroup>
+      <FacePresetFiles Include="Data\face_presets\*.xml" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FacePresetFiles)" DestinationFolder="$(DeployDir)\HSPE\face_presets" ContinueOnError="true" />
+  </Target>
+
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>HSPE.Tests</AssemblyName>
+    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <LangVersion>7.3</LangVersion>
+    <OutputPath>bin\</OutputPath>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Only Unity-free Kit files may be linked here. -->
+    <Compile Include="..\Kit\Transfer\ModuleMask.cs" />
+    <Compile Include="..\Kit\Transfer\MeshInfo.cs" />
+    <Compile Include="..\Kit\Transfer\PresetDocument.cs" />
+    <Compile Include="..\Kit\Face\FaceRecipes.cs" />
+    <Compile Include="..\Kit\Face\FaceMix.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
