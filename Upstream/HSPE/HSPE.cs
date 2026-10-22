@@ -16,6 +16,24 @@ using UnityEngine.SceneManagement;
 
 /*
  Changelog:
+	v2.16.0:
+	- Merged Gru's HSPE 2.15.0 bone-presets fork (presets, blend, Reset All, bone settings on cards, scene save
+	  protection) into the HSUIKit fork (new windows, copy / paste / presets, Face window); both groups' files load
+	v2.15.0:
+	- Per-character portable bone edits on character cards, with scene authority and clean replacement
+	- Card saves during blend preview omit bone data without blocking the save or changing the preview
+	v2.14.1:
+	- Added confirmed Reset All in the main Bones tab, restoring only tracked edits and their FK guides
+	v2.14.0:
+	- Added reversible bone preset blending with frozen current-state fallback and selectable channels
+	- Preview leaves dirty edits and FK guides untouched; explicit Apply, Cancel and guarded scene/pose/card saves
+	v2.13.1:
+	- Integrated bone presets into Advanced Mode with separate Load/Create views and per-value previews
+	- Protected preset interaction from Studio camera dragging, wheel zoom and typing shortcuts
+	v2.13.0.1:
+	- Bone preset list clicks now select and preview; presets apply only through the explicit Load selected button
+	v2.13.0:
+	- Added selective bone modification presets with preserve-existing and overwrite-saved load modes
 	v2.12.0.1:
 	- Additional checks when working with blendshapdes, destroying colliders, applying weights and saving scenes that were loaded using the 'load (old)' feature
 	- Changing a character's head now forces an update to the BlendShapesEditor list
@@ -61,7 +79,7 @@ namespace HSPE
 		internal const string _guid = "com.joan6694.illusionplugins.poseeditor";
 		internal const int saveVersion = 0;
 #endif
-		internal const string _versionNum = "2.12.0.1";// "2.12.0";
+		internal const string _versionNum = "2.16.0";
 
 #if IPA
 		public override string Name { get { return _name; } }
@@ -80,7 +98,7 @@ namespace HSPE
 		protected override void Awake()
 		{
 			base.Awake();
-			_kitAvailable = global::HSKitGuard.KitGuard.Check(_name, "1.0.0");
+			_kitAvailable = global::HSKitGuard.KitGuard.Check(_name, "1.3.0"); // the new windows are built against HSUIKit 1.3.0
 			HarmonyExtensions.CreateInstance(_guid).PatchAllSafe();
 		}
 

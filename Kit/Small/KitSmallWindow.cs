@@ -51,6 +51,8 @@ namespace HSPE.Kit.Small
         private bool _shownRegister;
 
         public bool visible { get { return _window != null && _window.Visible; } }
+        /// <summary>The window's rect while shown, else null (HspeUndo hit-tests it).</summary>
+        internal RectTransform WindowRect { get { return visible ? _window.Rect : null; } }
 
         public static bool UseKitUI
         {

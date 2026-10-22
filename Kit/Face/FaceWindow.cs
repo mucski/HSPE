@@ -49,6 +49,8 @@ namespace HSPE.Kit.Face
         }
 
         public static bool Visible { get { return _self != null && _self._window.Visible; } }
+        /// <summary>The window's rect while shown, else null (HspeUndo leaves face edits to the Face window's own undo).</summary>
+        internal static RectTransform WindowRect { get { return Visible ? _self._window.Rect : null; } }
 
         public static void Toggle()
         {

@@ -46,6 +46,8 @@ namespace HSPE.Kit.Advanced
         private Image _stripe;
         private KitCheckbox _symmetrical;
         private KitButton _copy, _paste, _reset;
+        private KitButton _cardChip, _resetAll;
+        private string _shownCardStatus;
         private BonesEditor.KitCoord _coord = BonesEditor.KitCoord.Rotation;
         private Transform _shownBone;
         private int _shownStar = -1;
@@ -67,12 +69,19 @@ namespace HSPE.Kit.Advanced
             KitInput search = KitInput.Create(toolbar, "Search bones...", "", s => _tree.SetSearch(s));
             LayoutElement sl = Kit.Layout(search.gameObject, -1f, 32f);
             sl.flexibleWidth = 1f;
+            sl.minWidth = 120f; // the window's minimum width keeps this much room next to the chips
             _changedChip = KitButton.Create(toolbar, "Changed", ButtonStyle.Ghost, ToggleChanged);
             Kit.Layout(_changedChip.gameObject, 92f, 32f);
             KitTooltip.Attach(_changedChip.gameObject, "Only the bones HSPE has changed on this object");
             _gizmosChip = KitButton.Create(toolbar, "Gizmos", ButtonStyle.Ghost, ToggleGizmos);
             Kit.Layout(_gizmosChip.gameObject, 86f, 32f);
             KitTooltip.Attach(_gizmosChip.gameObject, "Draw the selected bone's axes in the viewport");
+            // Gru's card setting and Reset All (2.15 merge)
+            _cardChip = KitButton.Create(toolbar, "Save to card", ButtonStyle.Ghost, ToggleCard);
+            Kit.Layout(_cardChip.gameObject, 110f, 32f);
+            _resetAll = KitButton.Create(toolbar, "Reset All...", ButtonStyle.Danger, AskResetAll);
+            Kit.Layout(_resetAll.gameObject, 104f, 32f);
+            KitTooltip.Attach(_resetAll.gameObject, "Put every modified bone of this object back to its value before editing, FK rotations included. Clean values, other modules and preset files are not touched. Ctrl+Z undoes it.");
 
             // tree | favourites (the drawer below spans both)
             RectTransform treeHost = Kit.Rect(_root, "TreeHost");
@@ -205,6 +214,7 @@ namespace HSPE.Kit.Advanced
                 return;
             Paint(_changedChip, _changedOnly);
             Paint(_gizmosChip, _bones.kitDrawGizmos);
+            TickCardAndReset();
 
             Transform bone = _bones.kitTarget;
             if (bone != _shownBone)
@@ -283,6 +293,52 @@ namespace HSPE.Kit.Advanced
         {
             _changedOnly = !_changedOnly;
             _tree.SetChangedOnly(_changedOnly);
+        }
+
+        private void ToggleCard()
+        {
+            if (_bones != null && _bones.KitIsCharacter)
+                _bones.KitSaveOnCard = !_bones.KitSaveOnCard;
+        }
+
+        private void TickCardAndReset()
+        {
+            bool chara = _bones.KitIsCharacter;
+            if (_cardChip.gameObject.activeSelf != chara)
+                _cardChip.gameObject.SetActive(chara);
+            if (chara)
+            {
+                Paint(_cardChip, _bones.KitSaveOnCard);
+                string status = _bones.KitCardStatus;
+                if (status != _shownCardStatus)
+                {
+                    // his card messages (restored / skipped bones, invalid data) also show as a toast once
+                    if (_shownCardStatus != null && _bones.KitCardError)
+                        KitToast.Show("HSPE bones on card", status, ToastKind.Warning, 6f);
+                    _shownCardStatus = status;
+                    KitTooltip.Attach(_cardChip.gameObject, "Save current settings on card: when the character card is saved, every HSPE-modified bone value goes with it (no FK pose, no other HSPE modules). Off: the next card save leaves HSPE bone data out.\n\n" + status);
+                }
+            }
+            bool any = _bones.KitChangedCount() > 0;
+            if (_resetAll.Interactable != any)
+                _resetAll.Interactable = any;
+        }
+
+        private void AskResetAll()
+        {
+            if (_bones == null)
+                return;
+            int n = _bones.KitChangedCount();
+            if (n == 0)
+                return;
+            BonesEditor bones = _bones;
+            KitModal.Show("Reset all bones?", "Put all " + n + " modified bones of this object back to their values before editing? FK rotations they set are restored too.", new[] { "Cancel", "Reset All" }, r =>
+            {
+                if (r != 1 || bones != _bones)
+                    return;
+                if (bones.KitResetAllBones() == false || bones.KitResetAllFailed)
+                    KitToast.Show("Reset All failed", "Nothing was changed. See the log.", ToastKind.Error, 5f);
+            }, true);
         }
 
         private void ToggleGizmos()

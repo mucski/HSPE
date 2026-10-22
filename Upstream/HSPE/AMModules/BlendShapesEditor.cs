@@ -220,7 +220,7 @@ namespace HSPE.AMModules
 				ApplyBlendShapeWeights();
 		}
 
-		public void OnGUI()
+		public override void OnGUI()
 		{
 			if (!_showSaveLoadWindow)
 				return;

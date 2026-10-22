@@ -124,11 +124,8 @@ namespace HSPE
 
 		private void OnGUI()
 		{
-			if (_drawAdvancedMode && MainWindow._self._poseTarget == this)
-			{
-				if (_blendShapesEditor._isEnabled)
-					_blendShapesEditor.OnGUI();
-			}
+			if (_drawAdvancedMode && MainWindow._self._poseTarget == this && _currentModule != null)
+				_currentModule.OnGUI();
 		}
 
 		private static void UpdateGizmosIf()
@@ -274,6 +271,7 @@ namespace HSPE
 			if (_lockDrag)
 				return;
 			_currentDragType = dragType;
+			global::HSPE.Kit.Undo.HspeUndo.NoteStudioDrag(); // addition (HSPE fork): StopDrag pushes its own undo step
 		}
 
 		public void StopDrag()
@@ -346,7 +344,12 @@ namespace HSPE
 
 		public void ScheduleLoad(XmlNode node, Action<bool> onLoadEnd)
 		{
-			MainWindow._self.StartCoroutine(LoadDefaultVersion_Routine(node, onLoadEnd));
+			int generation = 0;
+#if HONEYSELECT
+			generation = ++_bonesEditor.boneStateGeneration;
+			if (_target.type == GenericOCITarget.Type.Character) BoneCardPersistence.CancelTarget(_target.ociChar);
+#endif
+			MainWindow._self.StartCoroutine(LoadDefaultVersion_Routine(node, onLoadEnd, generation));
 		}
 
 		// addition (HSPE fork): the kit's copy / paste / presets apply modules one by one; _modules stays as it was
@@ -423,11 +426,14 @@ namespace HSPE
 				module.OnParentage(parent, child);
 		}
 
-		private IEnumerator LoadDefaultVersion_Routine(XmlNode xmlNode, Action<bool> onLoadEnd)
+		private IEnumerator LoadDefaultVersion_Routine(XmlNode xmlNode, Action<bool> onLoadEnd, int generation)
 		{
 			yield return null;
 			yield return null;
 			yield return null;
+#if HONEYSELECT
+			if (this == null || generation != _bonesEditor.boneStateGeneration) yield break;
+#endif
 			bool changed = LoadXml(xmlNode);
 			onLoadEnd?.Invoke(changed);
 		}

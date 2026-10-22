@@ -4,3 +4,4 @@ obj/
 *.user
 *.suo
 __pycache__/
+Thumbs.db

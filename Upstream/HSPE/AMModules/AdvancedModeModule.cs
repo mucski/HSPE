@@ -69,6 +69,7 @@ namespace HSPE.AMModules
 		public virtual void OnParentage(TreeNodeObject parent, TreeNodeObject child) { }
 		public virtual void DrawAdvancedModeChanged() { }
 		public virtual void UpdateGizmos() { }
+		public virtual void OnGUI() { }
 		#endregion
 
 		#region Abstract Methods

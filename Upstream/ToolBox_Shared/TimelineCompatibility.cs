@@ -69,6 +69,9 @@ namespace ToolBox
 			return _getIsPlaying();
 		}
 
+		// Optional integrations can ask without requiring Timeline to be installed/initialized.
+		internal static bool IsPlayingIfAvailable { get { return _getIsPlaying != null && _getIsPlaying(); } }
+
 		public static void Play()
 		{
 			_play();

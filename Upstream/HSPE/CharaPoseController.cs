@@ -522,7 +522,10 @@ namespace HSPE
 		private void CharBodyOnPostLateUpdate(CharBody human)
 		{
 			if (_target.ociChar.charBody == human)
+			{
+				BoneCardPersistence.RigEvaluated(this);
 				ApplyJointCorrection();
+			}
 		}
 #elif PLAYHOME
         private void ExpressionOnPostLateUpdate(Expression expression)

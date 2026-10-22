@@ -151,11 +151,14 @@ namespace HSPE.Kit.Small
                 foreach (string s in r.Skipped)
                     global::HSPE.Kit.Log.Write("transfer: skipped " + s);
             }
+            // one Studio undo step (Ctrl+Z) for the whole paste, next to the toast's own Undo button
+            global::HSPE.Kit.Undo.HspeUndo.PushExplicit(verb, targets, undo);
             string who = targets.Count == 1 ? NameOf(targets[0]) : targets.Count + " objects";
             string message = found + " of " + total + " entries" + (skipped > 0 ? ", " + skipped + " skipped (see log)" : "");
             KitToast.Show(verb + " to " + who, message, skipped > 0 ? ToastKind.Warning : ToastKind.Success, 8f, "Undo", delegate
             {
                 Restore(undo, null);
+                global::HSPE.Kit.Undo.HspeUndo.Refresh(undo.Keys);
                 KitToast.Show("Undone", who + " restored.", ToastKind.Info, 2.5f);
             });
         }

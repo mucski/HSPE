@@ -24,6 +24,8 @@ namespace HSPE.Kit.Advanced
         private sealed class SideRow
         {
             public AdvancedModeModule module; // null = Presets
+            public IAdvancedPage page;        // a page of its own instead of the module's (Bone presets: Bones module)
+            public bool noCount;              // no changed-entries number (Bone presets would repeat the Bones count)
             public RectTransform rect;
             public Image bg, bar;
             public Text label, count;
@@ -33,10 +35,13 @@ namespace HSPE.Kit.Advanced
 
         private MainWindow _main;
         private KitWindow _window;
+        /// <summary>The window's rect while shown, else null (HspeUndo hit-tests it).</summary>
+        internal RectTransform WindowRect { get { return _window != null && _window.Visible ? _window.Rect : null; } }
         private RectTransform _sidebarList, _pageHost, _disabledPage;
         private KitSwitch _activeSwitch;
         private readonly List<SideRow> _rows = new List<SideRow>();
         private PresetsPage _presetsPage;
+        private BonePresetsPage _bonePresetsPage;
         private BonesPage _bonesPage;
         private DynamicBonesPage _dynamicBonesPage;
         private BoobsPage _boobsPage;
@@ -56,7 +61,7 @@ namespace HSPE.Kit.Advanced
             KitWindow window = null;
             try
             {
-                window = KitWindow.Create("Advanced", 780f, 540f).Resizable(new Vector2(680f, 420f), new Vector2(4000f, 4000f)) /* narrower pushed the Bones drawer's Reset out */.Remember("HSPE.Advanced");
+                window = KitWindow.Create("Advanced", 780f, 540f).Resizable(new Vector2(780f, 420f), new Vector2(4000f, 4000f)) /* narrower squeezed the Bones toolbar's search (Save to card + Reset All, 2.16) and pushed the drawer's Reset out */.Remember("HSPE.Advanced");
                 KitAdvancedWindow w = window.gameObject.AddComponent<KitAdvancedWindow>();
                 w._main = main;
                 w._window = window;
@@ -112,6 +117,9 @@ namespace HSPE.Kit.Advanced
             _presetsPage = new PresetsPage();
             _presetsPage.Build(_pageHost);
             _presetsPage.Root.gameObject.SetActive(false);
+            _bonePresetsPage = new BonePresetsPage();
+            _bonePresetsPage.Build(_pageHost);
+            _bonePresetsPage.Root.gameObject.SetActive(false);
             _bonesPage = new BonesPage();
             _bonesPage.Build(_pageHost);
             _bonesPage.Root.gameObject.SetActive(false);
@@ -173,6 +181,9 @@ namespace HSPE.Kit.Advanced
             sep.rectTransform.sizeDelta = new Vector2(-20f, 1f);
             sep.rectTransform.anchoredPosition = Vector2.zero;
             AddRow(null, "Presets");
+            // Gru's bone presets / Blend (2.15 merge): the Bones module stays the shown one, so his preview stays alive
+            if (target._bonesEditor != null && target._bonesEditor.shouldDisplay)
+                AddRow(target._bonesEditor, "Bone presets", _bonePresetsPage, true);
             if (target is CharaPoseController)
                 AddActionRow("Face...","Opens the Face window (expressions, mood pad, vowels)", global::HSPE.Kit.Face.FaceWindow.Toggle);
         }
@@ -193,9 +204,9 @@ namespace HSPE.Kit.Advanced
             KitTooltip.Attach(bg.gameObject, tip);
         }
 
-        private void AddRow(AdvancedModeModule module, string label)
+        private void AddRow(AdvancedModeModule module, string label, IAdvancedPage page = null, bool noCount = false)
         {
-            SideRow r = new SideRow { module = module };
+            SideRow r = new SideRow { module = module, page = page, noCount = noCount };
             r.rect = Kit.Rect(_sidebarList, "Row " + label);
             Kit.Layout(r.rect.gameObject, -1f, RowH);
             r.bg = Kit.Image(r.rect, "Bg", Sprites.Rounded(Theme.RadiusSmall), Kit.Alpha(Theme.Accent, 0f), true);
@@ -210,7 +221,9 @@ namespace HSPE.Kit.Advanced
             hc.OnEnter = delegate { r.hover = true; };
             hc.OnExit = delegate { r.hover = false; };
             hc.OnClick = delegate { Select(r); };
-            if (module != null)
+            if (page is BonePresetsPage)
+                KitTooltip.Attach(r.bg.gameObject, "Save, load and blend selected bone values (position / rotation / scale)");
+            else if (module != null)
                 KitTooltip.Attach(r.bg.gameObject, "The number is how many entries this module has changed on this object");
             _rows.Add(r);
         }
@@ -225,7 +238,7 @@ namespace HSPE.Kit.Advanced
             if (r.module != null)
                 target.EnableModule(r.module); // Joan's call: gizmos follow the shown module
             _selectedRow = r;
-            ShowPage(PageFor(r.module), r.module);
+            ShowPage(r.page ?? PageFor(r.module), r.module);
         }
 
         /// <summary>The new page of a module (every HSPE module has one).</summary>
@@ -262,7 +275,15 @@ namespace HSPE.Kit.Advanced
         private SideRow RowOf(AdvancedModeModule module)
         {
             foreach (SideRow r in _rows)
-                if (r.module == module)
+                if (r.module == module && r.page == null)
+                    return r;
+            return null;
+        }
+
+        private SideRow RowWithPage(IAdvancedPage page)
+        {
+            foreach (SideRow r in _rows)
+                if (r.page == page)
                     return r;
             return null;
         }
@@ -281,7 +302,7 @@ namespace HSPE.Kit.Advanced
                 if (target != null)
                 {
                     // the module Joan's window would show; keep Presets if that page is open
-                    SideRow r = _page == _presetsPage ? RowOf(null) : RowOf(target.kitCurrentModule);
+                    SideRow r = _page == _presetsPage ? RowOf(null) : _page == _bonePresetsPage ? RowWithPage(_bonePresetsPage) : RowOf(target.kitCurrentModule);
                     Select(r ?? (_rows.Count != 0 ? _rows[0] : null));
                     _window.Title = "Advanced - " + TransferActions.NameOf(target);
                 }
@@ -370,8 +391,9 @@ namespace HSPE.Kit.Advanced
                 return;
             AdvancedModeModule selected = _selectedRow != null ? _selectedRow.module : null;
             bool presets = _page == _presetsPage;
+            bool bonePresets = _page == _bonePresetsPage;
             BuildSidebar(target);
-            SideRow r = presets ? RowOf(null) : RowOf(selected ?? target.kitCurrentModule);
+            SideRow r = presets ? RowOf(null) : bonePresets ? RowWithPage(_bonePresetsPage) : RowOf(selected ?? target.kitCurrentModule);
             Select(r ?? (_rows.Count != 0 ? _rows[0] : null));
         }
 
@@ -385,13 +407,13 @@ namespace HSPE.Kit.Advanced
             return mask;
         }
 
-        /// <summary>Changed entries per module (each module's own dirty count; the first version serialized every
-        /// module through a throwaway XmlTextWriter once a second - garbage every second while the window is open).</summary>
+        /// <summary>Changed entries per module, from each module's own dirty count (serializing the modules to count
+        /// them would make garbage every second while the window is open).</summary>
         private void RefreshCounts(PoseController target)
         {
             foreach (SideRow r in _rows)
             {
-                if (r.module == null)
+                if (r.module == null || r.noCount)
                     continue;
                 int n = ChangedCount(r.module);
                 if (n != r.shownCount)

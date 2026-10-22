@@ -185,9 +185,13 @@ namespace HSPE.Kit.Transfer
                 CharaPoseController chara = c as CharaPoseController;
                 if (chara != null && (modules & ModuleMask.Bones) != 0)
                     ApplySwitches(chara, node);
+                // the bone module's LoadXml (2.15 card merge) clears "save bones on card" as a scene load does; a paste
+                // or preset is not a scene load, so the target keeps its own choice
+                bool saveBonesOnCard = c._bonesEditor.saveBonesOnCard;
                 foreach (AdvancedModeModule module in c.kitModules)
                     if ((modules & MaskOf(module)) != 0)
                         module.LoadXml(node);
+                c._bonesEditor.saveBonesOnCard = saveBonesOnCard;
                 // the pasted shapes / bones replaced whatever the Face window had written: it lets go of that face
                 if ((modules & (ModuleMask.BlendShapes | ModuleMask.Bones)) != 0)
                     global::HSPE.Kit.Face.FaceState.Load(c, node);

@@ -89,6 +89,7 @@ namespace HSPE
 		internal Rect _advancedModeRect = new Rect(Screen.width - 650, Screen.height - 370, 650, 370);
 		private float _mainWindowSize = 1f;
 		private Canvas _ui;
+		internal Canvas joanCanvas { get { return _ui; } } // addition (HSPE fork): HspeUndo hit-tests Joan's small window
 		private GameObject _nothingText;
 		private Transform _controls;
 		private Slider _movementIntensity;
@@ -128,6 +129,7 @@ namespace HSPE
 		private readonly List<FKBoneEntry> _fkBoneEntries = new List<FKBoneEntry>();
 		private Dictionary<Transform, GuideObject> _dicGuideObject = new Dictionary<Transform, GuideObject>();
 		private RectTransform _imguiBackground;
+		private readonly BonePresetPointerCapture _bonePresetPointer = new BonePresetPointerCapture();
 		#endregion
 
 		#region Public Accessors
@@ -222,7 +224,12 @@ namespace HSPE
 #endif
 			_dicGuideObject = (Dictionary<Transform, GuideObject>)GuideObjectManager.Instance.GetPrivate("dicGuideObject");
 #if IPA
+#if HONEYSELECT
+			HSExtSave.HSExtSave.RegisterHandler("hspe", BoneCardPersistence.OnCharRead, BoneCardPersistence.OnCharWrite, OnSceneLoad, OnSceneImport, OnSceneSave, null, null);
+			BoneCardPersistence.InstallOptionalSaveHooks();
+#else
 			HSExtSave.HSExtSave.RegisterHandler("hspe", null, null, OnSceneLoad, OnSceneImport, OnSceneSave, null, null);
+#endif
 #elif BEPINEX
 			ExtendedSave.CardBeingLoaded += this.OnCharaLoad;
 			ExtendedSave.CardBeingSaved += this.OnCharaSave;
@@ -305,6 +312,7 @@ namespace HSPE
 
 		protected virtual void Update()
 		{
+			global::HSPE.Kit.Undo.HspeUndo.Tick(this); // addition (HSPE fork): Advanced edits become Studio Ctrl+Z steps
 			if (_lastScreenWidth != Screen.width || _lastScreenHeight != Screen.height)
 				OnWindowResize();
 			_lastScreenWidth = Screen.width;
@@ -318,6 +326,9 @@ namespace HSPE
 				_lastIndex = Studio.Studio.Instance.sceneInfo.CheckNewIndex();
 			}
 			_lastObjectCount = Studio.Studio.Instance.dicObjectCtrl.Count;
+#if HONEYSELECT
+			BoneCardPersistence.Tick();
+#endif
 
 
 			PoseController last = _poseTarget;
@@ -368,10 +379,16 @@ namespace HSPE
 			}
 			else if (_imguiBackground)
 				_imguiBackground.gameObject.SetActive(false);
+#if HONEYSELECT
+			SceneSaveProtection.DrawError();
+#endif
 		}
 
 		protected virtual void OnDestroy()
 		{
+#if HONEYSELECT
+			SceneSaveProtection.Shutdown();
+#endif
 			string folder = Path.Combine(_assemblyLocation, HSPE._name);
 			if (Directory.Exists(folder) == false)
 				Directory.CreateDirectory(folder);
@@ -1123,7 +1140,7 @@ namespace HSPE
 			}
 			// changed (HSPE fork): toggles whichever small window is in use; the kit window ignores the key while
 			// the user types in a text field
-			else if (Input.GetKeyDown(_mainWindowKeyCode) && (_kitSmall == null || global::HSPE.Kit.Small.KitSmallWindow.TypingInField() == false))
+			else if (Input.GetKeyDown(_mainWindowKeyCode) && !BonePresetHasTextFocus() && (_kitSmall == null || global::HSPE.Kit.Small.KitSmallWindow.TypingInField() == false))
 				ToggleMainWindow();
 
 			if (Input.GetMouseButtonUp(0))
@@ -1357,17 +1374,66 @@ namespace HSPE
 		{
 			private static bool Prefix()
 			{
+				if (_self == null)
+					return true;
+				if (_self.BlockBonePresetMouse())
+					return false;
 				if (_self._poseTarget != null && _self._poseTarget.isDraggingDynamicBone)
 					return false;
 				return true;
 			}
 		}
+
+		private bool BonePresetHasTextFocus()
+		{
+#if HONEYSELECT
+			if (SceneSaveProtection.HasError) return true;
+#endif
+			return _poseTarget != null && _poseTarget._bonesEditor.bonePresetTextFocused;
+		}
+
+		private bool BlockBonePresetMouse()
+		{
+#if HONEYSELECT
+			if (SceneSaveProtection.HasError) return true;
+#endif
+			bool visible = _poseTarget != null && _poseTarget._bonesEditor.bonePresetsVisible;
+			Vector3 mouse = Input.mousePosition;
+			bool inside = _advancedModeRect.Contains(new Vector2(mouse.x, Screen.height - mouse.y));
+			bool pressed = Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1) || Input.GetMouseButtonDown(2);
+			bool held = Input.GetMouseButton(0) || Input.GetMouseButton(1) || Input.GetMouseButton(2);
+			bool blocked = _bonePresetPointer.Update(visible, inside, pressed, held);
+			if (visible && pressed && !blocked)
+				_poseTarget._bonesEditor.ClearBonePresetTextFocus();
+			return blocked;
+		}
+
+#if HONEYSELECT
+		[HarmonyPatch(typeof(Studio.CameraControl), "InputMouseWheelZoomProc", new Type[0])]
+		private static class BonePreset_CameraWheel_Patches
+		{
+			private static bool Prefix() { return _self == null || !_self.BlockBonePresetMouse(); }
+		}
+
+		[HarmonyPatch(typeof(Studio.CameraControl), "InputKeyProc", new Type[0])]
+		private static class BonePreset_CameraKeys_Patches
+		{
+			private static bool Prefix() { return _self == null || !_self.BonePresetHasTextFocus(); }
+		}
+#endif
 		#endregion
 
 		#region Saves
 #if IPA
 		private void OnSceneLoad(string scenePath, XmlNode node)
 		{
+			global::HSPE.Kit.Undo.HspeUndo.Forget(); // addition (HSPE fork): saved before-states belong to the old scene
+#if HONEYSELECT
+			int epoch = BoneCardPersistence.SceneEpoch;
+			long cardOperation = BoneCardPersistence.Serial;
+#else
+			long cardOperation = long.MaxValue;
+#endif
 			_lastObjectCount = 0;
 			scenePath = Path.GetFileNameWithoutExtension(scenePath) + ".sav";
 #if HONEYSELECT
@@ -1384,12 +1450,22 @@ namespace HSPE
 				node = node.FirstChild;
 			this.ExecuteDelayed(() =>
 			{
-				LoadDefaultVersion(node, new SortedDictionary<int, ObjectCtrlInfo>(Studio.Studio.Instance.dicObjectCtrl).ToList());
+#if HONEYSELECT
+				if (epoch != BoneCardPersistence.SceneEpoch) return;
+#endif
+				LoadDefaultVersion(node, new SortedDictionary<int, ObjectCtrlInfo>(Studio.Studio.Instance.dicObjectCtrl).ToList(), cardOperation);
 			}, 3);
 		}
 
 		private void OnSceneImport(string scenePath, XmlNode node)
 		{
+			global::HSPE.Kit.Undo.HspeUndo.Forget(); // addition (HSPE fork): saved before-states belong to the old scene
+#if HONEYSELECT
+			int epoch = BoneCardPersistence.SceneEpoch;
+			long cardOperation = BoneCardPersistence.Serial;
+#else
+			long cardOperation = long.MaxValue;
+#endif
 			scenePath = Path.GetFileNameWithoutExtension(scenePath) + ".sav";
 #if HONEYSELECT
 			string dir = _pluginDir + _studioSavesDir;
@@ -1406,11 +1482,36 @@ namespace HSPE
 			Dictionary<int, ObjectCtrlInfo> toIgnore = new Dictionary<int, ObjectCtrlInfo>(Studio.Studio.Instance.dicObjectCtrl);
 			this.ExecuteDelayed(() =>
 			{
-				LoadDefaultVersion(node, Studio.Studio.Instance.dicObjectCtrl.Where(e => toIgnore.ContainsKey(e.Key) == false).OrderBy(e => SceneInfo_Import_Patches._newToOldKeys[e.Key]).ToList());
+#if HONEYSELECT
+				if (epoch != BoneCardPersistence.SceneEpoch) return;
+#endif
+				LoadDefaultVersion(node, Studio.Studio.Instance.dicObjectCtrl.Where(e => toIgnore.ContainsKey(e.Key) == false).OrderBy(e => SceneInfo_Import_Patches._newToOldKeys[e.Key]).ToList(), cardOperation);
 			}, 3);
 		}
 
 		private void OnSceneSave(string scenePath, XmlTextWriter xmlWriter)
+		{
+#if HONEYSELECT
+			xmlWriter.WriteRaw(SceneSaveProtection.TakePrepared(scenePath) ?? CaptureSceneXml());
+#else
+			WriteSceneXml(xmlWriter);
+#endif
+		}
+
+#if HONEYSELECT
+		internal string CaptureSceneXml()
+		{
+			using (StringWriter text = new StringWriter())
+			using (XmlTextWriter writer = new XmlTextWriter(text))
+			{
+				WriteSceneXml(writer);
+				writer.Flush();
+				return text.ToString();
+			}
+		}
+#endif
+
+		private void WriteSceneXml(XmlTextWriter xmlWriter)
 		{
 			xmlWriter.WriteStartElement("root");
 			xmlWriter.WriteAttributeString("version", HSPE._versionNum);
@@ -1445,7 +1546,7 @@ namespace HSPE
 			xmlWriter.WriteEndElement();
 		}
 
-		private void LoadDefaultVersion(XmlNode node, List<KeyValuePair<int, ObjectCtrlInfo>> dic)
+		private void LoadDefaultVersion(XmlNode node, List<KeyValuePair<int, ObjectCtrlInfo>> dic, long cardOperation)
 		{
 			//this.ExecuteDelayed(() => {
 			//    UnityEngine.Debug.LogError("objects in scene " + Studio.Studio.Instance.dicObjectCtrl.Count);
@@ -1464,7 +1565,10 @@ namespace HSPE
 							++i;
 						if (i == dic.Count)
 							break;
-						LoadElement(ociChar, childNode);
+#if HONEYSELECT
+						if (!BoneCardPersistence.ChangedSince(ociChar, cardOperation))
+#endif
+							LoadElement(ociChar, childNode);
 						++i;
 						break;
 					case "itemInfo":

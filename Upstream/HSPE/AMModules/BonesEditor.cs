@@ -71,6 +71,8 @@ namespace HSPE.AMModules
 		{
 			set
 			{
+				if (!value) CancelResetAllBonesConfirmation();
+				if (!value) CancelBoneBlend("Preview cancelled: Bones module closed.");
 				base.isEnabled = value;
 				UpdateDebugLinesState(this);
 			}
@@ -81,6 +83,7 @@ namespace HSPE.AMModules
 		public BonesEditor(PoseController parent, GenericOCITarget target) : base(parent)
 		{
 			_target = target;
+			_parent.onUpdate += UpdateBoneBlendLifecycle;
 			_parent.onLateUpdate += LateUpdate;
 			_parent.onDisable += OnDisable;
 			if (_cubeDebugLines.Count == 0)
@@ -170,6 +173,8 @@ namespace HSPE.AMModules
 
 		private void OnDisable()
 		{
+			CancelResetAllBonesConfirmation();
+			CancelBoneBlend("Preview cancelled: target disabled.");
 			if (_dirtyBones.Count == 0)
 				return;
 			foreach (KeyValuePair<GameObject, TransformData> kvp in _dirtyBones)
@@ -187,7 +192,10 @@ namespace HSPE.AMModules
 
 		public override void OnDestroy()
 		{
+			CancelResetAllBonesConfirmation();
+			CancelBoneBlend("Preview cancelled: target removed.");
 			base.OnDestroy();
+			_parent.onUpdate -= UpdateBoneBlendLifecycle;
 			_parent.onLateUpdate -= LateUpdate;
 			_parent.onDisable -= OnDisable;
 		}
@@ -202,11 +210,15 @@ namespace HSPE.AMModules
 
 		public override void DrawAdvancedModeChanged()
 		{
+			if (!PoseController._drawAdvancedMode) CancelResetAllBonesConfirmation();
+			if (!PoseController._drawAdvancedMode) CancelBoneBlend("Preview cancelled: Advanced Mode closed.");
 			UpdateDebugLinesState(this);
 		}
 
 		public static void SelectionChanged(BonesEditor self)
 		{
+			if (_resetAllConfirmationOwner != null && _resetAllConfirmationOwner != self) _resetAllConfirmationOwner.CancelResetAllBonesConfirmation();
+			if (_activeBlendEditor != null && _activeBlendEditor != self) CancelActiveBoneBlend("Preview cancelled: target changed.");
 			UpdateDebugLinesState(self);
 		}
 
@@ -241,6 +253,12 @@ namespace HSPE.AMModules
 
 		public override void GUILogic()
 		{
+			PrepareBonePresetsGUI();
+			if (_showBonePresetsWindow)
+			{
+				DrawBonePresetsPane();
+				return;
+			}
 			GUILayout.BeginHorizontal();
 			GUILayout.BeginVertical(GUILayout.ExpandWidth(true));
 			GUILayout.BeginHorizontal();
@@ -306,7 +324,13 @@ namespace HSPE.AMModules
 				foreach (KeyValuePair<GameObject, TransformData> pair in _dirtyBones)
 					OpenParents(pair.Key);
 			}
+			if (GUILayout.Button("Bone presets"))
+				OpenBonePresetsWindow();
 			GUILayout.EndHorizontal();
+			DrawResetAllBonesBar();
+#if HONEYSELECT
+			DrawBoneCardBar();
+#endif
 
 			GUILayout.BeginHorizontal();
 			GUILayout.Label("Legend:");
@@ -716,6 +740,7 @@ namespace HSPE.AMModules
 
 		private void SetBonePosition(Transform bone, Vector3 position)
 		{
+			CancelBlendForExternalEdit(bone, BlendChannels.Position);
 			SetBoneDirty(bone.gameObject).SetPosition(position, bone);
 			/*TransformData td = SetBoneDirty(bone.gameObject);
 			td.position = position;
@@ -753,6 +778,7 @@ namespace HSPE.AMModules
 
 		private void SetBoneRotation(Transform bone, Quaternion rotation)
 		{
+			CancelBlendForExternalEdit(bone, BlendChannels.Rotation);
 			SetBoneDirty(bone.gameObject).SetRotation(rotation, bone);
 			/*TransformData td = SetBoneDirty(bone.gameObject);
 			td.rotation = rotation;
@@ -807,9 +833,9 @@ namespace HSPE.AMModules
 
 		private Vector3 GetBoneScale(Transform bone)
 		{
-			return _dirtyBones.TryGetValue(_boneTarget.gameObject, out TransformData data) && data.scale.hasValue
+			return _dirtyBones.TryGetValue(bone.gameObject, out TransformData data) && data.scale.hasValue
 				? (Vector3)data.scale
-				: _boneTarget.localScale;
+				: bone.localScale;
 		}
 
 		private void SetBoneTargetScale(Vector3 scale)
@@ -825,6 +851,7 @@ namespace HSPE.AMModules
 
 		private void SetBoneScale(Transform bone, Vector3 scale)
 		{
+			CancelBlendForExternalEdit(bone, BlendChannels.Scale);
 			SetBoneDirty(bone.gameObject).SetScale(scale, bone);
 			/*TransformData td = SetBoneDirty(bone.gameObject);
 			td.scale = scale;
@@ -847,19 +874,33 @@ namespace HSPE.AMModules
 
 		public void LoadFrom(BonesEditor other)
 		{
+			// Freeze the duplication snapshot now; the source may be edited, replaced or deleted before the delayed copy.
+			List<KeyValuePair<string, TransformData>> sourceBones = new List<KeyValuePair<string, TransformData>>();
+			foreach (KeyValuePair<GameObject, TransformData> pair in other._dirtyBones)
+				if (pair.Key != null) sourceBones.Add(new KeyValuePair<string, TransformData>(pair.Key.transform.GetPathFrom(other._parent.transform), new TransformData(pair.Value)));
+			List<string> openedPaths = new List<string>();
+			foreach (GameObject opened in other._openedBones)
+				if (opened != null) openedPaths.Add(opened.transform.GetPathFrom(other._parent.transform));
+#if HONEYSELECT
+			saveBonesOnCard = other.saveBonesOnCard;
+			int generation = ++boneStateGeneration;
+#endif
 			MainWindow._self.ExecuteDelayed(() =>
 			{
-				foreach (GameObject openedBone in other._openedBones)
+#if HONEYSELECT
+				if (_parent == null || generation != boneStateGeneration) return;
+#endif
+				foreach (string path in openedPaths)
 				{
-					Transform obj = _parent.transform.Find(openedBone.transform.GetPathFrom(other._parent.transform));
+					Transform obj = _parent.transform.Find(path);
 					if (obj)
 						_openedBones.Add(obj.gameObject);
 				}
-				foreach (KeyValuePair<GameObject, TransformData> kvp in other._dirtyBones)
+				foreach (KeyValuePair<string, TransformData> kvp in sourceBones)
 				{
-					Transform obj = _parent.transform.Find(kvp.Key.transform.GetPathFrom(other._parent.transform));
+					Transform obj = _parent.transform.Find(kvp.Key);
 					if (obj)
-						_dirtyBones.Add(obj.gameObject, new TransformData(kvp.Value));
+						_dirtyBones[obj.gameObject] = new TransformData(kvp.Value);
 				}
 				_boneEditionScroll = other._boneEditionScroll;
 				_shortcutsScroll = other._shortcutsScroll;
@@ -870,6 +911,10 @@ namespace HSPE.AMModules
 		public override int SaveXml(XmlTextWriter xmlWriter)
 		{
 			int written = 0;
+#if HONEYSELECT
+			xmlWriter.WriteRaw(EncodeSceneBones(CaptureSceneBones()));
+			++written; // Characters AND items retain dirty ownership, baselines and authoritative empty state.
+#endif
 			if (_dirtyBones.Count != 0)
 			{
 				xmlWriter.WriteStartElement("advancedObjects");
@@ -878,6 +923,11 @@ namespace HSPE.AMModules
 					if (kvp.Key == null)
 						continue;
 					string n = kvp.Key.transform.GetPathFrom(_parent.transform);
+#if HONEYSELECT
+					// Legacy readers cannot disambiguate structured scene addresses. Keep their
+					// compatible subset without pointing an ambiguous name at the wrong transform.
+					if (!ValidPresetBonePath(n) || ResolvePresetBone(n) != kvp.Key.transform) continue;
+#endif
 					xmlWriter.WriteStartElement("object");
 					xmlWriter.WriteAttributeString("name", n);
 
@@ -911,8 +961,26 @@ namespace HSPE.AMModules
 
 		public override bool LoadXml(XmlNode xmlNode)
 		{
+			CancelBoneBlend("Preview cancelled: pose loaded.");
 			bool changed = false;
+#if HONEYSELECT
+			{
+				++boneStateGeneration;
+				if (_target.type == GenericOCITarget.Type.Character) BoneCardPersistence.CancelTarget(_target.ociChar);
+				XmlNode complete = xmlNode.FindChildNode("boneSceneState");
+				CardBoneState state = null;
+				if (complete != null)
+				{
+					try { state = DecodeSceneBones(complete); }
+					catch (Exception error) { SetBoneCardStatus("Scene bone state is invalid: " + error.Message, true); return false; }
+				}
+				ClearBonesForAuthoritativeLoad();
+				saveBonesOnCard = false;
+				if (state != null) return ApplyCardBones(state, true);
+			}
+#else
 			ResetAll();
+#endif
 			XmlNode objects = xmlNode.FindChildNode("advancedObjects");
 
 			if (objects != null)
@@ -1073,6 +1141,10 @@ namespace HSPE.AMModules
 
 		private void MakeDirtyBonePos(Transform bone, Transform twinBone, bool withChildren = false)
 		{
+#if HONEYSELECT
+			if (IsForeignBoneRoot(bone)) return;
+			if (!IsOwnedSceneBone(twinBone)) twinBone = null;
+#endif
 			SetBonePosition(bone, GetBonePosition(bone));
 			if (_symmetricalEdition && twinBone)
 				SetBonePosition(twinBone, GetBonePosition(twinBone));
@@ -1091,6 +1163,10 @@ namespace HSPE.AMModules
 
 		private void MakeDirtyBoneRot(Transform bone, Transform twinBone, bool withChildren = false)
 		{
+#if HONEYSELECT
+			if (IsForeignBoneRoot(bone)) return;
+			if (!IsOwnedSceneBone(twinBone)) twinBone = null;
+#endif
 			SetBoneRotation(bone, GetBoneRotation(bone));
 			if (_symmetricalEdition && twinBone)
 				SetBoneRotation(twinBone, GetBoneRotation(twinBone));
@@ -1109,6 +1185,10 @@ namespace HSPE.AMModules
 
 		private void MakeDirtyBoneScale(Transform bone, Transform twinBone, bool withChildren = false)
 		{
+#if HONEYSELECT
+			if (IsForeignBoneRoot(bone)) return;
+			if (!IsOwnedSceneBone(twinBone)) twinBone = null;
+#endif
 			SetBoneScale(bone, GetBoneScale(bone));
 			if (_symmetricalEdition && twinBone)
 				SetBoneScale(twinBone, GetBoneScale(twinBone));
@@ -1248,7 +1328,10 @@ namespace HSPE.AMModules
 		private void ApplyBoneManualCorrection()
 		{
 			if (_dirtyBones.Count == 0)
+			{
+				ApplyBlendOverlay();
 				return;
+			}
 			bool shouldClean = false;
 			foreach (var kvp in _dirtyBones)
 			{
@@ -1272,6 +1355,7 @@ namespace HSPE.AMModules
 						newDirtyBones.Add(kvp.Key, kvp.Value);
 				_dirtyBones = newDirtyBones;
 			}
+			ApplyBlendOverlay();
 		}
 
 		public override void UpdateGizmos()
