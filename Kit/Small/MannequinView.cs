@@ -176,29 +176,7 @@ namespace HSPE.Kit.Small
             Side side = SideOf(j);
             bool arm = j != null && IsArm(j);
             bool leg = j != null && !arm && side != Side.None;
-            if (j == null || arm)
-            {
-                if (side != Side.Left)
-                {
-                    menu.Item("Copy right arm to left", delegate { chara.CopyLimbToTwin(FullBodyBipedChain.RightArm, OIBoneInfo.BoneGroup.RightArm); });
-                    menu.Item("Copy right hand to left", delegate { chara.CopyHandToTwin(OIBoneInfo.BoneGroup.RightHand); });
-                }
-                if (side != Side.Right)
-                {
-                    menu.Item("Copy left arm to right", delegate { chara.CopyLimbToTwin(FullBodyBipedChain.LeftArm, OIBoneInfo.BoneGroup.LeftArm); });
-                    menu.Item("Copy left hand to right", delegate { chara.CopyHandToTwin(OIBoneInfo.BoneGroup.LeftHand); });
-                }
-                menu.Separator();
-            }
-            if (j == null || leg)
-            {
-                if (side != Side.Left)
-                    menu.Item("Copy right leg to left", delegate { chara.CopyLimbToTwin(FullBodyBipedChain.RightLeg, OIBoneInfo.BoneGroup.RightLeg); });
-                if (side != Side.Right)
-                    menu.Item("Copy left leg to right", delegate { chara.CopyLimbToTwin(FullBodyBipedChain.LeftLeg, OIBoneInfo.BoneGroup.LeftLeg); });
-                menu.Separator();
-            }
-            menu.Item("Swap pose (mirror left / right)", delegate { chara.SwapPose(); });
+            LimbMenu.Append(menu, chara, side == Side.Right ? LimbMenu.Side.Right : side == Side.Left ? LimbMenu.Side.Left : LimbMenu.Side.None, arm, leg);
             return menu;
         }
 

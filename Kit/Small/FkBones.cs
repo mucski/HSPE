@@ -62,6 +62,12 @@ namespace HSPE.Kit.Small
             GuideObjectManager.Instance.selectObject = bone.guideObject;
         }
 
+        /// <summary>Replaces Studio's selection even while Ctrl is held (its Ctrl-add refuses FK guides).</summary>
+        public static void SelectGuide(GuideObject guide)
+        {
+            GuideObjectManager.Instance.SetSelectObject(guide, false);
+        }
+
         /// <summary>Joan's rule: a bone can be rotated when FK is on and Studio shows its guide.</summary>
         public static bool Usable(PoseController target, OCIChar.BoneInfo bone)
         {

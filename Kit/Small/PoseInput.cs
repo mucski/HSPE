@@ -105,6 +105,76 @@ namespace HSPE.Kit.Small
                 ikBendGoalTargets.Add(bendGoal);
         }
 
+        // ---------------------------------------------------------------- FK multi-select
+        // Studio marks FK guides single-select, so extra bones live here: the primary stays Studio's selected guide
+        // (its gizmo, Joan's rules), the extras turn with it. Picking any other bone elsewhere drops the extras.
+        public readonly List<GuideObject> fkExtras = new List<GuideObject>();
+        private GuideObject _fkPrimary;
+        private readonly List<Quaternion> _lastFKExtraRotations = new List<Quaternion>();
+
+        /// <summary>Once per frame: forgets the extras when Studio's selection moved, drops destroyed ones.</summary>
+        public void SyncFkSelection()
+        {
+            GuideObject sel = FkBones.SelectedGuide();
+            if (sel != _fkPrimary)
+            {
+                _fkPrimary = sel;
+                fkExtras.Clear();
+            }
+            for (int i = fkExtras.Count - 1; i >= 0; i--)
+                if (fkExtras[i] == null)
+                    fkExtras.RemoveAt(i);
+        }
+
+        public bool IsFkSelected(GuideObject g)
+        {
+            return g != null && (g == _fkPrimary || fkExtras.Contains(g));
+        }
+
+        /// <summary>Plain click selects one bone; Ctrl-click adds / removes it.</summary>
+        public void ClickFk(GuideObject g, bool additive)
+        {
+            SyncFkSelection();
+            if (!additive || _fkPrimary == null)
+            {
+                SelectFkPrimary(g);
+                return;
+            }
+            if (g == _fkPrimary)
+            {
+                if (fkExtras.Count == 0)
+                    return;
+                GuideObject next = fkExtras[0];
+                fkExtras.RemoveAt(0);
+                List<GuideObject> keep = new List<GuideObject>(fkExtras);
+                SelectFkPrimary(next);
+                fkExtras.AddRange(keep);
+                return;
+            }
+            if (fkExtras.Contains(g))
+                fkExtras.Remove(g);
+            else
+                fkExtras.Add(g);
+        }
+
+        /// <summary>Selects a group (a whole finger...): the first one is Studio's selection.</summary>
+        public void SelectFkGroup(List<GuideObject> group)
+        {
+            if (group.Count == 0)
+                return;
+            SelectFkPrimary(group[0]);
+            for (int i = 1; i < group.Count; i++)
+                if (group[i] != null && !fkExtras.Contains(group[i]))
+                    fkExtras.Add(group[i]);
+        }
+
+        private void SelectFkPrimary(GuideObject g)
+        {
+            FkBones.SelectGuide(g);
+            _fkPrimary = FkBones.SelectedGuide();
+            fkExtras.Clear();
+        }
+
         public void ReleaseDrags()
         {
             xMove = yMove = zMove = false;
@@ -186,24 +256,29 @@ namespace HSPE.Kit.Small
                 else
                 {
                     bool changeRotation = false;
-                    Quaternion newRotation = _lastFKBonesRotation;
+                    Quaternion turn = Quaternion.identity; // the same local turn for the bone and every extra
                     if (xRot)
                     {
-                        newRotation *= Quaternion.AngleAxis(_delta.x * 20f * intensity, Vector3.right);
+                        turn *= Quaternion.AngleAxis(_delta.x * 20f * intensity, Vector3.right);
                         changeRotation = true;
                     }
                     if (yRot)
                     {
-                        newRotation *= Quaternion.AngleAxis(_delta.x * 20f * intensity, Vector3.up);
+                        turn *= Quaternion.AngleAxis(_delta.x * 20f * intensity, Vector3.up);
                         changeRotation = true;
                     }
                     if (zRot)
                     {
-                        newRotation *= Quaternion.AngleAxis(_delta.x * 20f * intensity, Vector3.forward);
+                        turn *= Quaternion.AngleAxis(_delta.x * 20f * intensity, Vector3.forward);
                         changeRotation = true;
                     }
                     if (changeRotation)
-                        poseTarget.SeFKBoneTargetRotation(FkBones.SelectedGuide(), newRotation);
+                    {
+                        poseTarget.SeFKBoneTargetRotation(FkBones.SelectedGuide(), _lastFKBonesRotation * turn);
+                        for (int i = 0; i < fkExtras.Count && i < _lastFKExtraRotations.Count; i++)
+                            if (fkExtras[i] != null)
+                                poseTarget.SeFKBoneTargetRotation(fkExtras[i], _lastFKExtraRotations[i] * turn);
+                    }
                 }
             }
             else
@@ -228,6 +303,9 @@ namespace HSPE.Kit.Small
                 {
                     if (FkBones.SelectedGuide() != null)
                         _lastFKBonesRotation = poseTarget.GetFKBoneTargetRotation(FkBones.SelectedGuide());
+                    _lastFKExtraRotations.Clear();
+                    for (int i = 0; i < fkExtras.Count; i++)
+                        _lastFKExtraRotations.Add(fkExtras[i] != null ? poseTarget.GetFKBoneTargetRotation(fkExtras[i]) : Quaternion.identity);
                 }
             }
         }

@@ -35,6 +35,9 @@ namespace HSPE.Kit.Small
         private RectTransform[] _pages; // IK, FK body, Hands, More (tab order)
         private MannequinView _mannequin;
         private FkFigureView _fkBody, _fkHands;
+        private GuideObject _labelSel;
+        private int _labelExtras = -1;
+        private bool _labelFk;
         private FkMoreList _fkMore;
         private PoseController _boundTarget;
         private int _boundCount = -1;
@@ -151,9 +154,9 @@ namespace HSPE.Kit.Small
             }
             _mannequin = MannequinView.Create(_pages[0], _main);
             Figure(_mannequin.transform);
-            _fkBody = FkFigureView.CreateBody(_pages[1]);
+            _fkBody = FkFigureView.CreateBody(_pages[1], _main);
             Figure(_fkBody.transform);
-            _fkHands = FkFigureView.CreateHands(_pages[2]);
+            _fkHands = FkFigureView.CreateHands(_pages[2], _main);
             Figure(_fkHands.transform);
             _fkMore = FkMoreList.Create(_pages[3]);
             ShowPage(_input.modeIK ? 0 : 1);
@@ -338,6 +341,7 @@ namespace HSPE.Kit.Small
         {
             if (target != _boundTarget || target.target.fkObjects.Count != _boundCount)
                 BindFK(target);
+            _input.SyncFkSelection();
             GuideObject sel = FkBones.SelectedGuide();
             // non-short-circuit: every page refreshes; a vanished bone (hair / clothes swapped) triggers a rebind
             bool valid = _fkBody.Refresh(target, sel) & _fkHands.Refresh(target, sel) & _fkMore.Refresh(target, sel);
@@ -353,10 +357,20 @@ namespace HSPE.Kit.Small
                 FollowSelection(sel);
             }
 
-            string label = _fkBody.LabelOf(sel) ?? _fkHands.LabelOf(sel) ?? _fkMore.LabelOf(sel);
-            string s = label ?? (target.target.fkEnabled ? "Click a joint" : "FK is off for this object");
-            if (_selectionText.text != s)
-                _selectionText.text = s;
+            // rebuilt only when the selection changes (string building every frame is garbage)
+            int extras = _input.fkExtras.Count;
+            if (sel != _labelSel || extras != _labelExtras || target.target.fkEnabled != _labelFk)
+            {
+                _labelSel = sel;
+                _labelExtras = extras;
+                _labelFk = target.target.fkEnabled;
+                string label = _fkBody.LabelOf(sel) ?? _fkHands.LabelOf(sel) ?? _fkMore.LabelOf(sel);
+                if (label != null && extras > 0)
+                    label += " + " + extras + " more";
+                string s = label ?? (target.target.fkEnabled ? "Click a joint" : "FK is off for this object");
+                if (_selectionText.text != s)
+                    _selectionText.text = s;
+            }
         }
 
         private void BindFK(PoseController target)

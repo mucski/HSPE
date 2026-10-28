@@ -16,6 +16,11 @@ using UnityEngine.SceneManagement;
 
 /*
  Changelog:
+	v2.17.0:
+	- FK and Hands pages: right-click menu (copy arm / hand / leg to the other side, swap pose) as on the IK page
+	- FK and Hands pages: Ctrl-click selects several bones, right-click selects a whole finger or every finger of a
+	  hand; the rotate pads turn all of them
+	- Bones page search finds bones of swapped hair / clothes and reloaded characters
 	v2.16.0:
 	- Merged Gru's HSPE 2.15.0 bone-presets fork (presets, blend, Reset All, bone settings on cards, scene save
 	  protection) into the HSUIKit fork (new windows, copy / paste / presets, Face window); both groups' files load
@@ -79,7 +84,7 @@ namespace HSPE
 		internal const string _guid = "com.joan6694.illusionplugins.poseeditor";
 		internal const int saveVersion = 0;
 #endif
-		internal const string _versionNum = "2.16.0";
+		internal const string _versionNum = "2.17.0";
 
 #if IPA
 		public override string Name { get { return _name; } }

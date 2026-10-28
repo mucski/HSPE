@@ -4,7 +4,8 @@
 param([string]$Mode = "undo", [int]$Timeout = 240,
       [string]$HS = (Join-Path $PSScriptRoot '..\..\HoneySelect'))
 $log = "$HS\Plugins\Logs\HSPlugins.debug.log"
-if (Get-Process StudioNEO_64, StudioNEO_32 -ErrorAction SilentlyContinue) { "StudioNEO is already running - not launching a second copy"; exit 1 }
+$exe = (Resolve-Path "$HS\StudioNEO_64.exe").Path
+if (Get-Process StudioNEO_64 -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }) { "This install's StudioNEO is already running - not launching a second copy"; exit 1 }
 if (-not (Test-Path "$HS\Plugins\Logs\enabled.txt")) { "Plugins\Logs\enabled.txt is missing - HSPE would not log"; exit 1 }
 $dir = "$HS\UserData\HSPE"; New-Item -ItemType Directory -Force $dir | Out-Null
 Set-Content "$dir\selftest.txt" $Mode -NoNewline

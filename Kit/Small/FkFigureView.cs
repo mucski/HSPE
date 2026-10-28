@@ -11,7 +11,8 @@ namespace HSPE.Kit.Small
     /// An FK figure (Body or Hands page): joints at fixed places, each bound to the target's FK bone with that key
     /// (see <see cref="FkBones.Key"/>). A joint whose bone the target doesn't have is hidden, so the figure shows
     /// exactly Studio's FK bones; bones without a place here go to the More list. Click selects the bone like Joan's
-    /// FK list; Studio's own selection is what the Rotate pads turn.
+    /// FK list; Ctrl-click adds / removes bones that the Rotate pads turn along with it. Right-click: copy limb to
+    /// the other side / swap (as on the IK page), and on the hands, select a whole finger or hand.
     /// </summary>
     internal sealed class FkFigureView : MonoBehaviour
     {
@@ -32,12 +33,13 @@ namespace HSPE.Kit.Small
 
         private readonly List<Slot> _slots = new List<Slot>();
         private readonly Dictionary<string, Slot> _byKey = new Dictionary<string, Slot>();
+        private MainWindow _main;
 
         // ---------------------------------------------------------------- the two figures
 
-        public static FkFigureView CreateBody(Transform parent)
+        public static FkFigureView CreateBody(Transform parent, MainWindow main)
         {
-            FkFigureView v = Create(parent, "FK Body", FigureDraw.Body);
+            FkFigureView v = Create(parent, "FK Body", FigureDraw.Body, main);
             v.Add("head", "Head", 115f, 28f);
             v.Add("neck", "Neck", 115f, 47f);
             v.Add("spine03", "Chest", 115f, 64f);
@@ -65,9 +67,9 @@ namespace HSPE.Kit.Small
             Add("toes01_" + s, name + " toes", X(70f, mirror), 240f);
         }
 
-        public static FkFigureView CreateHands(Transform parent)
+        public static FkFigureView CreateHands(Transform parent, MainWindow main)
         {
-            FkFigureView v = Create(parent, "FK Hands", DrawHands);
+            FkFigureView v = Create(parent, "FK Hands", DrawHands, main);
             v.HandSlots("r", "Right", 1f);
             v.HandSlots("l", "Left", -1f);
             return v;
@@ -125,13 +127,69 @@ namespace HSPE.Kit.Small
 
         // ---------------------------------------------------------------- building
 
-        private static FkFigureView Create(Transform parent, string name, Background background)
+        private static FkFigureView Create(Transform parent, string name, Background background, MainWindow main)
         {
             RectTransform root = Kit.Rect(parent, name);
             Kit.Layout(root.gameObject, FigureDraw.Width, FigureDraw.Height);
             FkFigureView v = root.gameObject.AddComponent<FkFigureView>();
+            v._main = main;
             background(root);
+            // right-click on empty space: the whole menu
+            KitContextMenu.Attach(root.gameObject, () => v.BuildMenu(null));
             return v;
+        }
+
+        // ---------------------------------------------------------------- right-click menu
+
+        private KitMenu BuildMenu(Slot s)
+        {
+            CharaPoseController chara = _main.poseTarget as CharaPoseController;
+            if (chara == null)
+                return null;
+            KitMenu menu = new KitMenu();
+            string key = s != null ? s.key : "";
+            string side = key.EndsWith("_r") ? "r" : key.EndsWith("_l") ? "l" : null;
+            int finger = FingerOf(key);
+            if (side != null && (finger >= 0 || key == "hand_" + side))
+            {
+                if (finger >= 0)
+                {
+                    int f = finger;
+                    menu.Item("Select whole " + Fingers[f], delegate { SelectGroup(side, f, f); });
+                }
+                menu.Item("Select all fingers", delegate { SelectGroup(side, 0, Fingers.Length - 1); });
+                menu.Separator();
+            }
+            bool arm = key.StartsWith("shoulder_") || key.StartsWith("armup") || key.StartsWith("armlow") || key.StartsWith("hand_");
+            bool leg = !arm && (key.StartsWith("legup") || key.StartsWith("leglow") || key.StartsWith("foot") || key.StartsWith("toes"));
+            LimbMenu.Side ls = side == "r" ? LimbMenu.Side.Right : side == "l" ? LimbMenu.Side.Left : LimbMenu.Side.None;
+            LimbMenu.Append(menu, chara, ls, arm, leg);
+            return menu;
+        }
+
+        // "hand_index02_r" -> 1; -1 for anything that is not a finger joint
+        private static int FingerOf(string key)
+        {
+            if (!key.StartsWith("hand_"))
+                return -1;
+            for (int f = 0; f < Fingers.Length; f++)
+                if (key.StartsWith("hand_" + Fingers[f]))
+                    return f;
+            return -1;
+        }
+
+        /// <summary>Selects fingers first..last of one side (joints 1 - 3 each), base joint first.</summary>
+        private void SelectGroup(string side, int first, int last)
+        {
+            List<GuideObject> group = new List<GuideObject>();
+            for (int f = first; f <= last; f++)
+                for (int j = 1; j <= 3; j++)
+                {
+                    Slot s;
+                    if (_byKey.TryGetValue("hand_" + Fingers[f] + "0" + j + "_" + side, out s) && s.bone != null && s.enabled)
+                        group.Add(s.bone.guideObject);
+                }
+            _main._input.SelectFkGroup(group);
         }
 
         private void Add(string key, string label, float x, float y)
@@ -154,9 +212,10 @@ namespace HSPE.Kit.Small
             hc.OnClick = delegate
             {
                 if (s.enabled && s.bone != null)
-                    FkBones.Select(s.bone);
+                    _main._input.ClickFk(s.bone.guideObject, PoseInput.CtrlHeld());
             };
-            KitTooltip.Attach(s.rect.gameObject, label);
+            KitTooltip.Attach(s.rect.gameObject, label + "\nCtrl-click: add / remove. Right-click: more");
+            KitContextMenu.Attach(s.rect.gameObject, () => BuildMenu(s));
             s.rect.gameObject.SetActive(false); // shown once bound to a bone
             _slots.Add(s);
             _byKey[key] = s;
@@ -207,7 +266,7 @@ namespace HSPE.Kit.Small
                     continue;
                 }
                 s.enabled = FkBones.Usable(target, s.bone);
-                s.selected = selected != null && s.bone.guideObject == selected;
+                s.selected = _main._input.IsFkSelected(s.bone.guideObject);
                 Draw(s);
             }
             return valid;

@@ -35,6 +35,10 @@ namespace HSPE.Kit.Undo
             catch (Exception) { }
             if (mode == "undo")
                 main.StartCoroutine(Run(main));
+            else if (mode == "scenesave")
+                main.StartCoroutine(global::HSPE.Kit.SceneSaveSelfTest.Run(main, false));
+            else if (mode == "scenesave-bsl")
+                main.StartCoroutine(global::HSPE.Kit.SceneSaveSelfTest.Run(main, true));
             else if (mode == "bonepresets")
                 main.StartCoroutine(global::HSPE.Kit.Advanced.BonePresetsPage.SelfTest(main));
         }

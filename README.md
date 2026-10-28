@@ -27,11 +27,22 @@ Everything you save goes to `UserData\HSPE\` (pose presets, face presets, face-p
 
 To get Joan's original windows back: small window → Options → turn off **New HSPE window**, restart Studio.
 
+## New in 2.17.0
+
+- **FK and Hands pages: right-click menu**, the same as on the IK page: copy an arm, hand or leg to the other side,
+  or swap the pose left / right.
+- **FK and Hands pages: several bones at once.** Ctrl-click joints to add or remove them; on the Hands page,
+  right-click a finger joint for **Select whole finger** or **Select all fingers**. The rotate pads turn every
+  selected bone by the same amount (one Ctrl+Z undoes it), so a whole finger curls in one drag.
+- **Bones page search** now finds the bones of swapped hair or clothes and of a reloaded character (it used to keep
+  searching the bones from before the change).
+
 ## What's new
 
 **Small window** - a mannequin figure instead of the button grid.
 - **IK**: click the circles (effectors) and diamonds (bend goals) on the figure; right-click a limb for its menu.
-- **FK**, **Hands** (finger joints) and **More** (every other FK bone, grouped like Studio's list).
+- **FK**, **Hands** (finger joints) and **More** (every other FK bone, grouped like Studio's list). On FK and Hands,
+  Ctrl-click selects several bones and right-click opens the limb menu (Hands: select a whole finger).
 - The window resizes, and the figures grow with it.
 - **Copy / Paste / Presets** in the header: copy a character's settings and paste them onto others, or save them as a
   preset with a thumbnail. Choose which parts travel: Bones, Colliders, Dynamic Bones, Blend Shapes, IK, Boobs and,

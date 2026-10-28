@@ -121,12 +121,12 @@ namespace HSPE.Kit.Advanced
             Transform root = bones.kitRoot;
             if (_search.Length != 0)
             {
+                // read the live hierarchy every time: hair / clothes / a reloaded character replace transforms
                 if (_allBones == null)
-                {
                     _allBones = new List<Transform>();
-                    foreach (Transform child in root)
-                        Collect(child, _allBones);
-                }
+                _allBones.Clear();
+                foreach (Transform child in root)
+                    Collect(child, _allBones);
                 foreach (Transform t in _allBones)
                 {
                     if (t == null)
